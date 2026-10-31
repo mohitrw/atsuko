@@ -355,6 +355,7 @@ const ID3Parser = {
       const bytes = new Uint8Array(buffer);
       if (bytes.length < 6) return '';
       const encoding = bytes[0];
+      const timeFormat = bytes[4]; // 1 = MPEG frames, 2 = milliseconds
       let offset = 6;
 
       if (encoding === 0 || encoding === 3) {
@@ -370,18 +371,35 @@ const ID3Parser = {
       const lines = [];
       while (offset < bytes.length) {
         let textEnd = offset;
+        let tsOffset = 0;
+        let text = '';
+
         if (encoding === 0 || encoding === 3) {
           while (textEnd < bytes.length && bytes[textEnd] !== 0) textEnd++;
-          const text = this.decodeEncodedText(bytes.slice(offset, textEnd), encoding);
-          if (text) lines.push(text);
-          offset = textEnd + 1 + 4; // Skip null + 4-byte timestamp
+          text = this.decodeEncodedText(bytes.slice(offset, textEnd), encoding);
+          tsOffset = textEnd + 1;
+          offset = tsOffset + 4;
         } else {
           while (textEnd < bytes.length - 1 && !(bytes[textEnd] === 0 && bytes[textEnd + 1] === 0)) {
             textEnd += 2;
           }
-          const text = this.decodeEncodedText(bytes.slice(offset, textEnd), encoding);
-          if (text) lines.push(text);
-          offset = textEnd + 2 + 4; // Skip double null + 4-byte timestamp
+          text = this.decodeEncodedText(bytes.slice(offset, textEnd), encoding);
+          tsOffset = textEnd + 2;
+          offset = tsOffset + 4;
+        }
+
+        if (tsOffset + 4 <= bytes.length) {
+          const ms = ((bytes[tsOffset] << 24) | (bytes[tsOffset + 1] << 16) | (bytes[tsOffset + 2] << 8) | bytes[tsOffset + 3]) >>> 0;
+          const totalSecs = timeFormat === 1 ? ms / 38.28 : ms / 1000;
+          const mins = Math.floor(totalSecs / 60);
+          const secs = Math.floor(totalSecs % 60);
+          const centis = Math.floor((totalSecs % 1) * 100);
+          const timeTag = `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(centis).padStart(2, '0')}]`;
+          if (text && text.trim()) {
+            lines.push(`${timeTag} ${text.trim()}`);
+          }
+        } else if (text && text.trim()) {
+          lines.push(text.trim());
         }
       }
       return lines.join('\n');

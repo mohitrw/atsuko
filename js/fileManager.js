@@ -277,8 +277,12 @@ class FileManager {
         // SMART REUSE: Track is already parsed and in DB -> Re-attach fresh File reference
         cached.fileBlob = file;
         cached.audioUrl = null;
-        if (cached.coverBlob && !cached.coverUrl) {
-          cached.coverUrl = URL.createObjectURL(cached.coverBlob);
+        if (cached.coverBlob) {
+          if (!cached.coverUrl) {
+            cached.coverUrl = URL.createObjectURL(cached.coverBlob);
+          }
+        } else {
+          cached.coverUrl = 'assets/atsuko-no-cover-image.svg';
         }
         initialTracks.push(cached);
       } else {
@@ -303,7 +307,7 @@ class FileManager {
           lyrics: '',
           duration: 0,
           formattedDuration: '0:00',
-          coverUrl: 'assets/M logo for music items.png',
+          coverUrl: 'assets/atsuko-no-cover-image.svg',
           coverBlob: null,
           hasEmbeddedCover: false,
           fileBlob: file,
@@ -457,7 +461,7 @@ class FileManager {
               track.coverUrl = URL.createObjectURL(track.coverBlob);
               track.hasEmbeddedCover = true;
             } else {
-              track.coverUrl = 'assets/M logo for music items.png';
+              track.coverUrl = 'assets/atsuko-no-cover-image.svg';
               track.hasEmbeddedCover = false;
             }
           }
@@ -682,6 +686,277 @@ class FileManager {
       playlist.playCount = (playlist.playCount || 0) + 1;
       playlist.lastPlayed = Date.now();
       await this.savePlaylist(playlist);
+    }
+  }
+
+  /**
+   * General Settings storage in IndexedDB (Supports Directory Handles, UI configs)
+   */
+  async getSetting(key) {
+    if (!key) return null;
+    if (!this.db) await this.initDB();
+    if (!this.db || !this.db.objectStoreNames.contains('settings')) {
+      try {
+        const val = localStorage.getItem(`musico_setting_${key}`);
+        return val ? JSON.parse(val) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction('settings', 'readonly');
+        const req = tx.objectStore('settings').get(key);
+        req.onsuccess = (e) => {
+          const res = e.target.result;
+          resolve(res ? res.value : null);
+        };
+        req.onerror = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  async getSetting(key) {
+    if (!key) return null;
+    try {
+      const localVal = localStorage.getItem(`musico_setting_${key}`);
+      if (localVal !== null && localVal !== undefined) {
+        return JSON.parse(localVal);
+      }
+    } catch (e) {}
+
+    if (!this.db) await this.initDB();
+    if (!this.db || !this.db.objectStoreNames.contains('settings')) {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction('settings', 'readonly');
+        const req = tx.objectStore('settings').get(key);
+        req.onsuccess = (e) => {
+          const res = e.target.result;
+          resolve(res ? res.value : null);
+        };
+        req.onerror = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  async saveSetting(key, value) {
+    if (!key) return;
+    try {
+      localStorage.setItem(`musico_setting_${key}`, JSON.stringify(value));
+    } catch (e) {}
+
+    if (!this.db) await this.initDB();
+    if (!this.db || !this.db.objectStoreNames.contains('settings')) return;
+
+    try {
+      const tx = this.db.transaction('settings', 'readwrite');
+      tx.objectStore('settings').put({ key: key, value: value });
+    } catch (e) {
+      console.warn('Error saving setting to DB:', e);
+    }
+  }
+
+  /**
+   * Recordings Management
+   */
+  async getRecordings() {
+    const list = await this.getSetting('musico_recordings_list');
+    return Array.isArray(list) ? list : [];
+  }
+
+  async saveRecording(recording) {
+    if (!recording || !recording.id) return;
+    const list = await this.getRecordings();
+    const idx = list.findIndex(r => r.id === recording.id);
+    if (idx !== -1) {
+      list[idx] = recording;
+    } else {
+      list.unshift(recording);
+    }
+    await this.saveSetting('musico_recordings_list', list);
+  }
+
+  async deleteRecording(recordingId) {
+    if (!recordingId) return;
+    const list = await this.getRecordings();
+    const filtered = list.filter(r => r.id !== recordingId);
+    await this.saveSetting('musico_recordings_list', filtered);
+    await this.deleteTrackFromDB(recordingId);
+  }
+
+  /**
+   * Profile & Local Offline Stats Management (High-Performance In-Memory Cached)
+   */
+  async getFirstLaunchDate() {
+    if (this._cachedFirstLaunch) return this._cachedFirstLaunch;
+    let launch = await this.getSetting('musico_first_launch_date');
+    if (!launch) {
+      launch = Date.now();
+      await this.saveSetting('musico_first_launch_date', launch);
+    }
+    this._cachedFirstLaunch = typeof launch === 'number' ? launch : parseInt(launch, 10) || Date.now();
+    return this._cachedFirstLaunch;
+  }
+
+  async getProfileData() {
+    const firstLaunch = await this.getFirstLaunchDate();
+    let customAvatar = null;
+    let customUsername = 'USER';
+    try {
+      customAvatar = localStorage.getItem('musico_profile_image') || (this._cachedAvatar || await this.getSetting('musico_profile_image'));
+      customUsername = localStorage.getItem('musico_profile_username') || (this._cachedUsername || await this.getSetting('musico_profile_username')) || 'USER';
+    } catch (e) {}
+
+    return {
+      name: customUsername,
+      username: customUsername,
+      avatarUrl: customAvatar || 'assets/default-avatar.svg',
+      firstLaunchDate: firstLaunch
+    };
+  }
+
+  async saveProfileUsername(name) {
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    this._cachedUsername = cleanName;
+    try {
+      localStorage.setItem('musico_profile_username', cleanName);
+    } catch (e) {}
+    await this.saveSetting('musico_profile_username', cleanName);
+  }
+
+  async saveProfileImage(dataUrl) {
+    if (!dataUrl) return;
+    this._cachedAvatar = dataUrl;
+    try {
+      localStorage.setItem('musico_profile_image', dataUrl);
+    } catch (e) {}
+    await this.saveSetting('musico_profile_image', dataUrl);
+  }
+
+  async getPlaybackStats() {
+    if (this._cachedStats) return this._cachedStats;
+
+    const rawStats = await this.getSetting('musico_playback_stats');
+    const firstLaunch = await this.getFirstLaunchDate();
+    const defaults = {
+      totalListeningSeconds: 0,
+      totalSongsPlayed: 0,
+      timeDistribution: {
+        morning: 0,   // 6 AM - 12 PM
+        afternoon: 0, // 12 PM - 6 PM
+        evening: 0,   // 6 PM - 12 AM
+        night: 0      // 12 AM - 6 AM
+      },
+      trackPlayCounts: {},
+      trackListenSeconds: {},
+      artistPlayCounts: {},
+      albumPlayCounts: {},
+      genrePlayCounts: {},
+      languagePlayCounts: {},
+      firstLaunchDate: firstLaunch
+    };
+
+    if (!rawStats || typeof rawStats !== 'object') {
+      this._cachedStats = defaults;
+    } else {
+      this._cachedStats = {
+        totalListeningSeconds: rawStats.totalListeningSeconds || 0,
+        totalSongsPlayed: rawStats.totalSongsPlayed || 0,
+        timeDistribution: Object.assign({}, defaults.timeDistribution, rawStats.timeDistribution),
+        trackPlayCounts: rawStats.trackPlayCounts || {},
+        trackListenSeconds: rawStats.trackListenSeconds || {},
+        artistPlayCounts: rawStats.artistPlayCounts || {},
+        albumPlayCounts: rawStats.albumPlayCounts || {},
+        genrePlayCounts: rawStats.genrePlayCounts || {},
+        languagePlayCounts: rawStats.languagePlayCounts || {},
+        firstLaunchDate: rawStats.firstLaunchDate || firstLaunch
+      };
+    }
+
+    return this._cachedStats;
+  }
+
+  savePlaybackStats(stats) {
+    if (!stats) return;
+    this._cachedStats = stats;
+    try {
+      localStorage.setItem('musico_setting_musico_playback_stats', JSON.stringify(stats));
+    } catch (e) {}
+
+    // Debounce background write to IndexedDB
+    if (this._statsSaveTimeout) clearTimeout(this._statsSaveTimeout);
+    this._statsSaveTimeout = setTimeout(() => {
+      this.saveSetting('musico_playback_stats', this._cachedStats);
+    }, 1500);
+  }
+
+  async recordPlaybackSeconds(seconds, track) {
+    if (!seconds || seconds <= 0) return;
+    const stats = await this.getPlaybackStats();
+    stats.totalListeningSeconds = (stats.totalListeningSeconds || 0) + seconds;
+
+    const hour = new Date().getHours();
+    let bucket = 'night';
+    if (hour >= 6 && hour < 12) bucket = 'morning';
+    else if (hour >= 12 && hour < 18) bucket = 'afternoon';
+    else if (hour >= 18 && hour < 24) bucket = 'evening';
+    else bucket = 'night';
+
+    stats.timeDistribution[bucket] = (stats.timeDistribution[bucket] || 0) + seconds;
+
+    if (track && track.id) {
+      stats.trackListenSeconds[track.id] = (stats.trackListenSeconds[track.id] || 0) + seconds;
+    }
+
+    this.savePlaybackStats(stats);
+    if (typeof window.onMusicoStatsUpdated === 'function') {
+      window.onMusicoStatsUpdated();
+    }
+  }
+
+  async recordSongPlay(track) {
+    if (!track) return;
+    const stats = await this.getPlaybackStats();
+    stats.totalSongsPlayed = (stats.totalSongsPlayed || 0) + 1;
+
+    const trackId = track.id || track.name;
+    if (trackId) {
+      stats.trackPlayCounts[trackId] = (stats.trackPlayCounts[trackId] || 0) + 1;
+    }
+
+    const artist = (track.artist || 'Unknown Artist').trim();
+    if (artist && artist !== 'Unknown Artist' && artist !== 'Unknown') {
+      stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
+    }
+
+    const album = (track.album || 'Unknown Album').trim();
+    if (album && album !== 'Unknown Album' && album !== 'Unknown') {
+      stats.albumPlayCounts[album] = (stats.albumPlayCounts[album] || 0) + 1;
+    }
+
+    const genre = (track.genre || '').trim();
+    if (genre) {
+      stats.genrePlayCounts[genre] = (stats.genrePlayCounts[genre] || 0) + 1;
+    }
+
+    const lang = (track.language || track.lang || '').trim();
+    if (lang) {
+      stats.languagePlayCounts[lang] = (stats.languagePlayCounts[lang] || 0) + 1;
+    }
+
+    this.savePlaybackStats(stats);
+    if (typeof window.onMusicoStatsUpdated === 'function') {
+      window.onMusicoStatsUpdated();
     }
   }
 }

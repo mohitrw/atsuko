@@ -1,17 +1,21 @@
 /**
- * Musico - PWA Offline Service Worker (v46)
+ * Atsuko - PWA Offline Service Worker (v100)
  */
 
-const CACHE_NAME = 'musico-cache-v46';
+const CACHE_NAME = 'atsuko-cache-v100';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './favicon.ico',
   './css/style.css',
   './js/app.js',
   './js/player.js',
   './js/fileManager.js',
   './js/id3Parser.js',
+  './assets/atsuko.svg',
+  './assets/atsuko-no-cover-image.svg',
+  './assets/atsuko-app-icon.svg',
   './assets/new%20navbar%20icons/bin%20new.svg',
   './assets/new%20navbar%20icons/explore%20all.svg',
   './assets/new%20navbar%20icons/home%20new.svg',
@@ -52,7 +56,16 @@ const STATIC_ASSETS = [
   './assets/LibraryItems/ArtistGraphicalBg.svg',
   './assets/LibraryItems/ArtistGraphicalFront.svg',
   './assets/LibraryItems/ArtistGraphicalMiddleCircle.svg',
-  './assets/LibraryItems/RecorderWholeGraphicalInterface.svg'
+  './assets/LibraryItems/RecorderWholeGraphicalInterface.svg',
+  './assets/LibraryItems/FolderBg.svg',
+  './assets/LibraryItems/FolderFilled.svg',
+  './assets/LibraryItems/FolderTop.svg',
+  './assets/LibraryItems/RecordingsUI/RecordingMain.svg',
+  './assets/LibraryItems/RecordingsUI/StartRecordingBtn.svg',
+  './assets/LibraryItems/RecordingsUI/StopRecordingBtn.svg',
+  './assets/LibraryItems/RecordingsUI/NormalRedCircle.svg',
+  './assets/LibraryItems/RecordingsUI/RedCircleWhileRecording.svg',
+  './assets/LibraryItems/SongFullView.svg'
 ];
 
 // Install Event - Pre-cache core assets safely
@@ -89,14 +102,14 @@ self.addEventListener('fetch', (e) => {
   }
 
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
+    caches.match(e.request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) {
         // Background refresh
         fetch(e.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => cache.put(e.request, networkResponse));
           }
-        }).catch(() => {/* offline */});
+        }).catch(() => {/* offline */ });
         return cachedResponse;
       }
       return fetch(e.request).then((networkResponse) => {
@@ -110,7 +123,10 @@ self.addEventListener('fetch', (e) => {
         return networkResponse;
       });
     }).catch(() => {
-      return caches.match('./index.html');
+      if (e.request.mode === 'navigate') {
+        return caches.match('./index.html');
+      }
+      return caches.match(e.request, { ignoreSearch: true });
     })
   );
 });

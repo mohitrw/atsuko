@@ -103,8 +103,30 @@ class MusicPlayer {
    * Setup audio event listeners
    */
   setupAudioListeners() {
+    let lastPlaybackTime = 0;
+
+    const flushListeningTime = () => {
+      if (lastPlaybackTime > 0) {
+        const elapsed = (Date.now() - lastPlaybackTime) / 1000;
+        const fm = window.fileManager || window.appFileManager;
+        if (elapsed > 0.5 && this.currentTrack && fm) {
+          fm.recordPlaybackSeconds(elapsed, this.currentTrack);
+        }
+        lastPlaybackTime = Date.now();
+      }
+    };
+
     this.audio.addEventListener('play', () => {
       this.isPlaying = true;
+      lastPlaybackTime = Date.now();
+      const fm = window.fileManager || window.appFileManager;
+      if (this.currentTrack && fm) {
+        fm.recordSongPlay(this.currentTrack);
+        this.currentTrack.playCount = (this.currentTrack.playCount || 0) + 1;
+        if (typeof fm.saveTrackToDB === 'function') {
+          fm.saveTrackToDB(this.currentTrack);
+        }
+      }
       if (!this.isAudioCtxInitialized) {
         this.initWebAudio();
       }
@@ -116,11 +138,19 @@ class MusicPlayer {
 
     this.audio.addEventListener('pause', () => {
       this.isPlaying = false;
+      flushListeningTime();
+      lastPlaybackTime = 0;
       this.updatePlayPauseUI();
     });
 
     this.audio.addEventListener('timeupdate', () => {
       this.updateProgressUI();
+      if (this.isPlaying && lastPlaybackTime > 0 && Date.now() - lastPlaybackTime >= 2500) {
+        flushListeningTime();
+      }
+      if (window.updateFullViewLyrics) {
+        window.updateFullViewLyrics();
+      }
     });
 
     this.audio.addEventListener('loadedmetadata', () => {
@@ -131,6 +161,8 @@ class MusicPlayer {
     });
 
     this.audio.addEventListener('ended', () => {
+      flushListeningTime();
+      lastPlaybackTime = 0;
       if (this.repeatMode === 'one') {
         this.audio.currentTime = 0;
         this.audio.play();
@@ -142,6 +174,8 @@ class MusicPlayer {
     this.audio.addEventListener('error', (e) => {
       console.warn('Audio playback error:', e);
       this.isPlaying = false;
+      flushListeningTime();
+      lastPlaybackTime = 0;
       this.updatePlayPauseUI();
     });
   }
@@ -551,9 +585,54 @@ class MusicPlayer {
       }
     });
 
+    // Artist Section Mini Player Play/Pause Button
+    const artistMiniPlayPauseBtn = document.getElementById('artistMiniPlayPauseBtn');
+    if (artistMiniPlayPauseBtn) {
+      const playIcon = artistMiniPlayPauseBtn.querySelector('.artist-mini-play-icon');
+      const pauseIcon = artistMiniPlayPauseBtn.querySelector('.artist-mini-pause-icon');
+      if (playIcon && pauseIcon) {
+        playIcon.style.display = this.isPlaying ? 'none' : 'block';
+        pauseIcon.style.display = this.isPlaying ? 'block' : 'none';
+      }
+      artistMiniPlayPauseBtn.setAttribute('title', this.isPlaying ? 'Pause' : 'Play');
+      artistMiniPlayPauseBtn.setAttribute('aria-label', this.isPlaying ? 'Pause' : 'Play');
+    }
+
+    // Expanded Player Play/Pause Button
+    const expandedPlayPauseBtn = document.getElementById('expandedPlayPauseBtn');
+    if (expandedPlayPauseBtn) {
+      const playIcon = expandedPlayPauseBtn.querySelector('.expanded-play-icon');
+      const pauseIcon = expandedPlayPauseBtn.querySelector('.expanded-pause-icon');
+      if (playIcon && pauseIcon) {
+        playIcon.style.display = this.isPlaying ? 'none' : 'block';
+        pauseIcon.style.display = this.isPlaying ? 'block' : 'none';
+      }
+      expandedPlayPauseBtn.setAttribute('title', this.isPlaying ? 'Pause' : 'Play');
+      expandedPlayPauseBtn.setAttribute('aria-label', this.isPlaying ? 'Pause' : 'Play');
+    }
+
+    // Dedicated Column View Mini Player Play/Pause Button
+    const columnMiniPlayPauseBtn = document.getElementById('columnMiniPlayPauseBtn');
+    if (columnMiniPlayPauseBtn) {
+      const playIcon = columnMiniPlayPauseBtn.querySelector('.column-mini-play-icon');
+      const pauseIcon = columnMiniPlayPauseBtn.querySelector('.column-mini-pause-icon');
+      if (playIcon && pauseIcon) {
+        playIcon.style.display = this.isPlaying ? 'none' : 'block';
+        pauseIcon.style.display = this.isPlaying ? 'block' : 'none';
+      }
+      columnMiniPlayPauseBtn.setAttribute('title', this.isPlaying ? 'Pause' : 'Play');
+      columnMiniPlayPauseBtn.setAttribute('aria-label', this.isPlaying ? 'Pause' : 'Play');
+    }
+
     document.querySelectorAll('.song-card').forEach(card => {
       const isCurrent = this.currentTrack && card.dataset.id === this.currentTrack.id;
       card.classList.toggle('active', isCurrent);
+      card.classList.toggle('playing', isCurrent && this.isPlaying);
+    });
+
+    document.querySelectorAll('.masonry-card').forEach(card => {
+      const isCurrent = this.currentTrack && card.dataset.id === this.currentTrack.id;
+      card.classList.toggle('is-current', isCurrent);
       card.classList.toggle('playing', isCurrent && this.isPlaying);
     });
 
@@ -565,6 +644,18 @@ class MusicPlayer {
     const mobilePopup = document.getElementById('mobileCompactPopup');
     if (mobilePopup) {
       mobilePopup.classList.toggle('visible', Boolean(this.currentTrack));
+    }
+
+    if (window.updateArtistMiniPlayerVisibility) {
+      window.updateArtistMiniPlayerVisibility();
+    }
+
+    if (window.updateColumnMiniPlayerVisibility) {
+      window.updateColumnMiniPlayerVisibility();
+    }
+
+    if (window.updateFullViewPlayPauseUI) {
+      window.updateFullViewPlayPauseUI(this.isPlaying);
     }
   }
 
@@ -578,6 +669,12 @@ class MusicPlayer {
     const mobilePopupProgressBar = document.getElementById('mobilePopupProgressBar');
     const mobileFullTimeDisplay = document.getElementById('mobileFullTimeDisplay');
     const mobileFullProgressPill = document.getElementById('mobileFullProgressPill');
+    const artistMiniTimeDisplay = document.getElementById('artistMiniTimeDisplay');
+    const artistMiniProgressFill = document.getElementById('artistMiniProgressFill');
+    const expandedTimeDisplay = document.getElementById('expandedTimeDisplay');
+    const expandedProgressFill = document.getElementById('expandedProgressFill');
+    const columnMiniTimeDisplay = document.getElementById('columnMiniTimeDisplay');
+    const columnMiniProgressFill = document.getElementById('columnMiniProgressFill');
 
     if (!this.currentTrack) {
       if (timeDisplay) timeDisplay.textContent = '0:00/0:00';
@@ -586,6 +683,12 @@ class MusicPlayer {
       if (mobilePopupProgressBar) mobilePopupProgressBar.style.width = '0%';
       if (mobileFullTimeDisplay) mobileFullTimeDisplay.textContent = '0:00/0:00';
       if (mobileFullProgressPill) mobileFullProgressPill.style.width = '0%';
+      if (artistMiniTimeDisplay) artistMiniTimeDisplay.textContent = '0:00/0:00';
+      if (artistMiniProgressFill) artistMiniProgressFill.style.width = '0%';
+      if (expandedTimeDisplay) expandedTimeDisplay.textContent = '0:00/0:00';
+      if (expandedProgressFill) expandedProgressFill.style.width = '0%';
+      if (columnMiniTimeDisplay) columnMiniTimeDisplay.textContent = '0:00/0:00';
+      if (columnMiniProgressFill) columnMiniProgressFill.style.width = '0%';
       return;
     }
 
@@ -600,6 +703,30 @@ class MusicPlayer {
     }
     if (progressPill) {
       progressPill.style.width = `${progressPercent}%`;
+    }
+
+    // Artist Section Mini Player
+    if (artistMiniTimeDisplay) {
+      artistMiniTimeDisplay.textContent = formattedTime;
+    }
+    if (artistMiniProgressFill) {
+      artistMiniProgressFill.style.width = `${progressPercent}%`;
+    }
+
+    // Expanded Player
+    if (expandedTimeDisplay) {
+      expandedTimeDisplay.textContent = formattedTime;
+    }
+    if (expandedProgressFill) {
+      expandedProgressFill.style.width = `${progressPercent}%`;
+    }
+
+    // Dedicated Column View Mini Player
+    if (columnMiniTimeDisplay) {
+      columnMiniTimeDisplay.textContent = formattedTime;
+    }
+    if (columnMiniProgressFill) {
+      columnMiniProgressFill.style.width = `${progressPercent}%`;
     }
 
     // Mobile Compact Popup
@@ -617,10 +744,15 @@ class MusicPlayer {
     if (mobileFullProgressPill) {
       mobileFullProgressPill.style.width = `${progressPercent}%`;
     }
+
+    // Full View Player Progress
+    if (window.updateFullViewProgressUI) {
+      window.updateFullViewProgressUI(progressPercent, formattedTime);
+    }
   }
 
   /**
-   * Update Now Playing Section UI (Art, Title, Artist) across Desktop & Mobile players
+   * Update full Now Playing user interface across all views
    */
   updateNowPlayingUI() {
     const artistNameElem = document.getElementById('nowPlayingArtist');
@@ -632,24 +764,45 @@ class MusicPlayer {
     const mobileFullTitle = document.getElementById('mobileFullTitle');
     const mobileFullAlbumArt = document.getElementById('mobileFullAlbumArt');
 
+    const artistMiniSongTitle = document.getElementById('artistMiniSongTitle');
+    const artistMiniCoverImg = document.getElementById('artistMiniCoverImg');
+    const expandedSongTitle = document.getElementById('expandedSongTitle');
+    const expandedMainCoverImg = document.getElementById('expandedMainCoverImg');
+    const columnMiniCoverImg = document.getElementById('columnMiniCoverImg');
+
     if (!this.currentTrack) {
       if (artistNameElem) artistNameElem.textContent = 'Unknown';
       if (titleElem) titleElem.textContent = 'No Songs';
       if (albumArtElem) {
-        albumArtElem.src = 'assets/M logo.png';
-        albumArtElem.alt = 'Musico - No Song Playing';
+        albumArtElem.src = 'assets/atsuko.svg';
+        albumArtElem.alt = 'Atsuko - No Song Playing';
         albumArtElem.className = 'album-art-img fallback-art';
       }
 
       if (mobilePopupCover) {
-        mobilePopupCover.src = 'assets/M logo for music items.png';
+        mobilePopupCover.src = 'assets/atsuko-no-cover-image.svg';
         mobilePopupCover.className = 'mobile-popup-cover fallback-art';
       }
       if (mobileFullArtist) mobileFullArtist.textContent = 'Unknown';
       if (mobileFullTitle) mobileFullTitle.textContent = 'No Songs';
       if (mobileFullAlbumArt) {
-        mobileFullAlbumArt.src = 'assets/M logo.png';
+        mobileFullAlbumArt.src = 'assets/atsuko.svg';
         mobileFullAlbumArt.className = 'mobile-full-art fallback-art';
+      }
+
+      if (artistMiniSongTitle) artistMiniSongTitle.textContent = 'No Songs';
+      if (artistMiniCoverImg) {
+        artistMiniCoverImg.src = 'assets/atsuko.svg';
+        artistMiniCoverImg.className = 'artist-mini-cover-img fallback-art';
+      }
+      if (expandedSongTitle) expandedSongTitle.textContent = 'No Songs';
+      if (expandedMainCoverImg) {
+        expandedMainCoverImg.src = 'assets/atsuko.svg';
+        expandedMainCoverImg.className = 'expanded-cover-art-img fallback-art';
+      }
+      if (columnMiniCoverImg) {
+        columnMiniCoverImg.src = 'assets/atsuko.svg';
+        columnMiniCoverImg.className = 'column-mini-cover-img fallback-art';
       }
       return;
     }
@@ -661,11 +814,20 @@ class MusicPlayer {
     if (artistNameElem) artistNameElem.textContent = artistText;
     if (titleElem) titleElem.textContent = titleText;
 
+    // Artist Section Mini Player
+    if (artistMiniSongTitle) artistMiniSongTitle.textContent = titleText;
+
+    // Expanded Player
+    if (expandedSongTitle) expandedSongTitle.textContent = titleText;
+
     // Mobile Full
     if (mobileFullArtist) mobileFullArtist.textContent = artistText;
     if (mobileFullTitle) mobileFullTitle.textContent = titleText;
 
     const isFallback = !this.currentTrack.coverUrl || 
+                       this.currentTrack.coverUrl.includes('atsuko-no-cover-image') ||
+                       this.currentTrack.coverUrl.includes('Atsuko - NoCoverImg') ||
+                       this.currentTrack.coverUrl.includes('atsuko') ||
                        this.currentTrack.coverUrl.includes('M logo for music items') ||
                        this.currentTrack.coverUrl.includes('MlogoforMusicItems') ||
                        this.currentTrack.coverUrl.includes('Mlogo') || 
@@ -675,7 +837,7 @@ class MusicPlayer {
     // Album Arts
     if (albumArtElem) {
       if (isFallback) {
-        albumArtElem.src = 'assets/M logo.png';
+        albumArtElem.src = 'assets/atsuko.svg';
         albumArtElem.alt = titleText;
         albumArtElem.className = 'album-art-img fallback-art';
       } else {
@@ -685,9 +847,48 @@ class MusicPlayer {
       }
     }
 
+    // Artist Mini Player Cover Art
+    if (artistMiniCoverImg) {
+      if (isFallback) {
+        artistMiniCoverImg.src = 'assets/atsuko.svg';
+        artistMiniCoverImg.alt = titleText;
+        artistMiniCoverImg.className = 'artist-mini-cover-img fallback-art';
+      } else {
+        artistMiniCoverImg.src = this.currentTrack.coverUrl;
+        artistMiniCoverImg.alt = titleText;
+        artistMiniCoverImg.className = 'artist-mini-cover-img';
+      }
+    }
+
+    // Dedicated Column View Mini Player Cover Art
+    if (columnMiniCoverImg) {
+      if (isFallback) {
+        columnMiniCoverImg.src = 'assets/atsuko.svg';
+        columnMiniCoverImg.alt = titleText;
+        columnMiniCoverImg.className = 'column-mini-cover-img fallback-art';
+      } else {
+        columnMiniCoverImg.src = this.currentTrack.coverUrl;
+        columnMiniCoverImg.alt = titleText;
+        columnMiniCoverImg.className = 'column-mini-cover-img';
+      }
+    }
+
+    // Expanded Player Cover Art
+    if (expandedMainCoverImg) {
+      if (isFallback) {
+        expandedMainCoverImg.src = 'assets/atsuko.svg';
+        expandedMainCoverImg.alt = titleText;
+        expandedMainCoverImg.className = 'expanded-cover-art-img fallback-art';
+      } else {
+        expandedMainCoverImg.src = this.currentTrack.coverUrl;
+        expandedMainCoverImg.alt = titleText;
+        expandedMainCoverImg.className = 'expanded-cover-art-img';
+      }
+    }
+
     if (mobilePopupCover) {
       if (isFallback) {
-        mobilePopupCover.src = 'assets/M logo for music items.png';
+        mobilePopupCover.src = 'assets/atsuko-no-cover-image.svg';
         mobilePopupCover.className = 'mobile-popup-cover fallback-art';
       } else {
         mobilePopupCover.src = this.currentTrack.coverUrl;
@@ -697,7 +898,7 @@ class MusicPlayer {
 
     if (mobileFullAlbumArt) {
       if (isFallback) {
-        mobileFullAlbumArt.src = 'assets/M logo.png';
+        mobileFullAlbumArt.src = 'assets/atsuko.svg';
         mobileFullAlbumArt.className = 'mobile-full-art fallback-art';
       } else {
         mobileFullAlbumArt.src = this.currentTrack.coverUrl;
@@ -708,6 +909,18 @@ class MusicPlayer {
     const mobilePopup = document.getElementById('mobileCompactPopup');
     if (mobilePopup) {
       mobilePopup.classList.toggle('visible', Boolean(this.currentTrack));
+    }
+
+    if (window.onMusicoTrackChange) {
+      window.onMusicoTrackChange(this.currentTrack);
+    }
+
+    if (window.updateArtistMiniPlayerVisibility) {
+      window.updateArtistMiniPlayerVisibility();
+    }
+
+    if (window.updateColumnMiniPlayerVisibility) {
+      window.updateColumnMiniPlayerVisibility();
     }
 
     const playlistCurrentTitle = document.getElementById('playlistCurrentTitle');
@@ -725,6 +938,10 @@ class MusicPlayer {
 
     if (window.onMusicoTrackChange) {
       window.onMusicoTrackChange(this.currentTrack);
+    }
+
+    if (window.updateFullViewNowPlayingUI) {
+      window.updateFullViewNowPlayingUI(this.currentTrack);
     }
   }
 

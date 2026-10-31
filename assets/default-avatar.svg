@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="avatarBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2C2C30"/>
+      <stop offset="100%" stop-color="#18181B"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Circle -->
+  <circle cx="64" cy="64" r="64" fill="url(#avatarBg)"/>
+  <circle cx="64" cy="64" r="62.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+  <!-- Human Head -->
+  <circle cx="64" cy="46" r="21" fill="#E4E4E7"/>
+  <!-- Human Shoulders/Torso -->
+  <path d="M26 108 C26 86, 43 74, 64 74 C85 74, 102 86, 102 108 C102 110, 100 112, 97 112 L31 112 C28 112, 26 110, 26 108 Z" fill="#E4E4E7"/>
+</svg>

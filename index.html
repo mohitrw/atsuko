@@ -1,18 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Musico — Offline Music Web App</title>
-  <meta name="description" content="Musico is a premium offline local music web application with rich audio playback, metadata parsing, and equalizer visualization." />
-  
+  <title>Atsuko — Offline Music Web App</title>
+  <meta name="description"
+    content="Atsuko is a premium offline local music web application with rich audio playback, metadata parsing, and equalizer visualization." />
+
   <!-- Fonts: Space Grotesk, Contrail One, Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Contrail+One&family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  
+  <link
+    href="https://fonts.googleapis.com/css2?family=Contrail+One&family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
+
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="css/style.css?v=52" />
+  <link rel="stylesheet" href="css/style.css?v=100" />
 
   <!-- PWA Web App Manifest & Meta -->
   <link rel="manifest" href="manifest.json" />
@@ -20,26 +24,30 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Musico" />
-  <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
-  <link rel="icon" type="image/png" href="assets/app icon main.png" />
+  <meta name="apple-mobile-web-app-title" content="Atsuko" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/icons/icon-512.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="assets/atsuko-app-icon.svg" />
+  <link rel="shortcut icon" href="favicon.ico" />
 </head>
+
 <body data-theme="dark">
   <div class="musico-app">
-    
+
     <!-- 1. LEFT SIDEBAR -->
     <aside class="sidebar" aria-label="Main Navigation">
       <div class="sidebar-top">
         <!-- Logo Mark -->
-        <div class="logo-mark" id="logoBtn" title="Musico Home">
-          <img src="assets/Mlogo.png" alt="Musico Logo" class="logo-img" />
+        <div class="logo-mark" id="logoBtn" title="Atsuko Home">
+          <img src="assets/atsuko.svg" alt="Atsuko Logo" class="logo-img" />
         </div>
 
         <!-- Add Music Folder Button (+) -->
         <button class="add-folder-btn" id="addFolderBtn" title="Add Music Folder / Files" aria-label="Add Music Folder">
           <svg class="add-icon" viewBox="0 0 24 24" fill="none">
-            <line x1="12" y1="3.5" x2="12" y2="20.5" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
-            <line x1="3.5" y1="12" x2="20.5" y2="12" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="12" y1="3.5" x2="12" y2="20.5" stroke="white" stroke-width="3.5" stroke-linecap="round" />
+            <line x1="3.5" y1="12" x2="20.5" y2="12" stroke="white" stroke-width="3.5" stroke-linecap="round" />
           </svg>
         </button>
       </div>
@@ -55,7 +63,8 @@
         <button class="menu-item-btn" data-action="home" title="Home" aria-label="Home">
           <img src="assets/new navbar icons/home new.svg" alt="Home" class="menu-item-icon" />
         </button>
-        <button class="menu-item-btn active" id="sidebarAllSongsBtn" data-action="all-songs" title="All Songs" aria-label="All Songs">
+        <button class="menu-item-btn active" id="sidebarAllSongsBtn" data-action="all-songs" title="All Songs"
+          aria-label="All Songs">
           <img src="assets/new navbar icons/all songs new.svg" alt="All Songs" class="menu-item-icon" />
         </button>
         <button class="menu-item-btn" data-action="delete" title="Manage Library / Clear" aria-label="Manage Library">
@@ -68,15 +77,17 @@
     <main class="player-section" aria-label="Now Playing Section">
       <!-- Player Header Bar (Off-white top section with 1px divider) -->
       <header class="player-header">
-        <span class="brand-text">usico</span>
+        <span class="brand-text">tsuko</span>
         <div class="view-selector-container">
-          <button class="view-selector-pill" id="viewSelectorPill" aria-haspopup="true" aria-expanded="false" title="View Options">
+          <button class="view-selector-pill" id="viewSelectorPill" aria-haspopup="true" aria-expanded="false"
+            title="View Options">
             <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
             <span id="viewSelectorLabel">Home / All Songs</span>
           </button>
           <div class="view-dropdown" id="viewDropdownMenu" role="menu">
+            <button class="dropdown-item" data-view="home" role="menuitem">Home</button>
             <button class="dropdown-item" data-view="explore" role="menuitem">Explore / Library</button>
             <button class="dropdown-item" data-view="all" role="menuitem">Home / All Songs</button>
             <button class="dropdown-item" data-view="albums" role="menuitem">Albums</button>
@@ -90,17 +101,19 @@
       <div class="player-body">
         <!-- Top Horizontal Slider Row (Song List Scroll Control) -->
         <div class="top-slider-row">
-          <div class="top-slider-pill" id="topSliderTrack" title="Scroll Songs List" role="scrollbar" aria-label="Scroll Songs List" tabindex="0">
+          <div class="top-slider-pill" id="topSliderTrack" title="Scroll Songs List" role="scrollbar"
+            aria-label="Scroll Songs List" tabindex="0">
             <div class="top-slider-thumb" id="topSliderThumb"></div>
           </div>
         </div>
 
         <!-- Filter Pill Buttons Row: All, Column, Shuffle -->
-        <div class="filter-pills-row">
+        <div class="filter-pills-row refreshing">
           <div class="filter-pills-group">
             <button class="filter-pill-btn active" id="filterAllBtn">All</button>
             <button class="filter-pill-btn" id="filterColumnBtn">Column</button>
-            <button class="filter-pill-btn" id="filterShuffleBtn" title="Playback Mode (Repeat One / Shuffle ON / Play in Line)">Shuffle</button>
+            <button class="filter-pill-btn" id="filterShuffleBtn"
+              title="Playback Mode (Repeat One / Shuffle ON / Play in Line)">Shuffle</button>
           </div>
         </div>
 
@@ -116,14 +129,17 @@
 
         <!-- Large Squircle Album Art Container -->
         <div class="album-art-container">
-          <img src="assets/M logo.png" alt="Album Cover Art" id="nowPlayingAlbumArt" class="album-art-img fallback-art" onerror="this.onerror=null;this.src='assets/M logo.png';this.className='album-art-img fallback-art';" />
-          <button class="now-playing-options-btn" id="nowPlayingOptionsBtn" title="Song Options" aria-label="Song Options">
+          <img src="assets/M logo.png" alt="Album Cover Art" id="nowPlayingAlbumArt" class="album-art-img fallback-art"
+            onerror="this.onerror=null;this.src='assets/M logo.png';this.className='album-art-img fallback-art';" />
+          <button class="now-playing-options-btn" id="nowPlayingOptionsBtn" title="Song Options"
+            aria-label="Song Options">
             <img src="assets/Dark Mode/DarkModeOptions 3 Dots.svg" alt="Options" class="now-playing-options-icon" />
           </button>
         </div>
 
         <!-- Bottom Progress Pill Bar with Track Title -->
-        <div class="player-bottom-progress-bar" id="progressBarContainer" title="Click to seek" role="progressbar" aria-label="Track Progress" tabindex="0">
+        <div class="player-bottom-progress-bar" id="progressBarContainer" title="Click to seek" role="progressbar"
+          aria-label="Track Progress" tabindex="0">
           <div class="progress-pill-active" id="progressPill"></div>
           <span class="now-playing-song-name" id="nowPlayingTitle">No Songs</span>
         </div>
@@ -135,12 +151,13 @@
             <button class="control-btn" id="prevBtn" title="Previous Track" aria-label="Previous Track">
               <img src="assets/Dark Mode/DarkModePrevBtn.svg" alt="Previous" class="control-btn-icon" />
             </button>
-            
+
             <!-- Play / Pause Button -->
-            <button class="control-btn play-pause-btn" id="playPauseBtn" title="Play / Pause" aria-label="Play or Pause">
+            <button class="control-btn play-pause-btn" id="playPauseBtn" title="Play / Pause"
+              aria-label="Play or Pause">
               <img src="assets/Plausebtn.svg" alt="Play" class="control-btn-icon" />
             </button>
-            
+
             <!-- Next Button -->
             <button class="control-btn" id="nextBtn" title="Next Track" aria-label="Next Track">
               <img src="assets/Dark Mode/DarkModeNxtBtn.svg" alt="Next" class="control-btn-icon" />
@@ -166,9 +183,10 @@
           <!-- Featured Two Playlists Graphic Structure (Ref. Playlist Interface.png) -->
           <div class="playlist-featured-container" id="playlistFeaturedContainer">
             <div class="featured-line-left"></div>
-            
+
             <div class="featured-item vertical-item" id="featuredItem1">
-              <div class="featured-card featured-card-vertical" id="featuredCard1" tabindex="0" role="button" title="Open Playlist">
+              <div class="featured-card featured-card-vertical" id="featuredCard1" tabindex="0" role="button"
+                title="Open Playlist">
                 <img src="assets/M logo.png" alt="Featured Playlist" class="featured-card-img" id="featuredImg1" />
               </div>
               <span class="featured-card-title title-vertical" id="featuredTitle1">Late Nights</span>
@@ -176,12 +194,14 @@
 
             <div class="featured-connector-wrap">
               <svg class="featured-connector-svg" viewBox="0 0 50 60" fill="none" preserveAspectRatio="none">
-                <path d="M 0 10 L 10 10 L 40 48 L 50 48" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 0 10 L 10 10 L 40 48 L 50 48" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
               </svg>
             </div>
 
             <div class="featured-item landscape-item" id="featuredItem2">
-              <div class="featured-card featured-card-landscape" id="featuredCard2" tabindex="0" role="button" title="Open Playlist">
+              <div class="featured-card featured-card-landscape" id="featuredCard2" tabindex="0" role="button"
+                title="Open Playlist">
                 <img src="assets/M logo.png" alt="Featured Playlist" class="featured-card-img" id="featuredImg2" />
               </div>
               <span class="featured-card-title title-landscape" id="featuredTitle2">Teleph..</span>
@@ -202,26 +222,31 @@
         <!-- PC Graphical Explore / Library Left-Side Section -->
         <div class="explore-left-section" id="exploreLeftSection" style="display: none;">
           <h2 class="explore-library-heading">Library</h2>
-          
+
           <div class="explore-shelves-container">
             <!-- Row 1: Artist (Left) & Recorder (Right) -->
             <div class="explore-shelf-row row-top">
               <!-- Artist Graphical Interface -->
               <div class="explore-item explore-artist-item" id="exploreArtistItem" title="Artists">
                 <div class="explore-artist-graphic">
-                  <img src="assets/LibraryItems/ArtistGraphicalBg.svg" class="explore-artist-layer layer-bg" alt="Artist Background" />
+                  <img src="assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg" class="explore-artist-layer layer-bg"
+                    id="exploreArtistBgImg" alt="Artist Background" />
                   <div class="explore-artist-circle-wrap">
-                    <img src="assets/M logo.png" class="explore-artist-circle-img" id="exploreArtistImg" alt="Artist Cover" />
+                    <img src="assets/M logo.png" class="explore-artist-circle-img" id="exploreArtistImg"
+                      alt="Artist Cover" />
                   </div>
-                  <img src="assets/LibraryItems/ArtistGraphicalMiddleCircle.svg" class="explore-artist-layer layer-middle" alt="Center Dot" />
-                  <img src="assets/LibraryItems/ArtistGraphicalFront.svg" class="explore-artist-layer layer-front" alt="Front Cover" />
+                  <img src="assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg"
+                    class="explore-artist-layer layer-middle" id="exploreArtistMiddleImg" alt="Center Dot" />
+                  <img src="assets/LibraryItems/ArtistGraphicalFront.svg" class="explore-artist-layer layer-front"
+                    alt="Front Cover" />
                 </div>
               </div>
 
               <!-- Recorder Graphical Interface -->
               <div class="explore-item explore-recorder-item" id="exploreRecorderItem" title="Recorder">
                 <div class="explore-recorder-graphic">
-                  <img src="assets/LibraryItems/RecorderWholeGraphicalInterface.svg" class="explore-recorder-img" alt="Recorder" />
+                  <img src="assets/LibraryItems/RecorderWholeGraphicalInterface-DarkMode.svg"
+                    class="explore-recorder-img" id="exploreRecorderImg" alt="Recorder" />
                 </div>
               </div>
             </div>
@@ -241,8 +266,10 @@
                   <div class="explore-playlist-mid-group">
                     <span class="explore-playlist-dots">...</span>
                     <div class="explore-playlist-connector-wrap">
-                      <svg class="explore-playlist-connector-svg" viewBox="0 0 44 44" fill="none" preserveAspectRatio="none">
-                        <path d="M 0 3 L 6 3 L 38 41 L 44 41" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
+                      <svg class="explore-playlist-connector-svg" viewBox="0 0 44 44" fill="none"
+                        preserveAspectRatio="none">
+                        <path d="M 0 3 L 6 3 L 38 41 L 44 41" stroke="currentColor" stroke-width="5.5"
+                          stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </div>
                   </div>
@@ -276,6 +303,375 @@
             <div class="explore-shelf-divider"></div>
           </div>
         </div>
+
+        <!-- PC Graphical Artist Left-Side Section -->
+        <div class="artist-left-section" id="artistLeftSection" style="display: none;">
+          <!-- 1. Artist Main View Left (Image 1) -->
+          <div class="artist-main-left" id="artistMainLeft">
+            <h2 class="artist-section-heading">Artist</h2>
+
+            <div class="artist-main-graphic-wrap">
+              <div class="explore-item explore-artist-item artist-main-item" id="artistMainGraphicItem" title="Artists">
+                <div class="explore-artist-graphic artist-main-graphic">
+                  <img src="assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg" class="explore-artist-layer layer-bg"
+                    id="artistMainBgImg" alt="Artist Background" />
+                  <div class="explore-artist-circle-wrap artist-main-circle-wrap">
+                    <img src="assets/M logo.png" class="explore-artist-circle-img" id="artistMainCoverImg"
+                      alt="Artist Cover" />
+                  </div>
+                  <img src="assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg"
+                    class="explore-artist-layer layer-middle" id="artistMainMiddleImg" alt="Center Dot" />
+                  <img src="assets/LibraryItems/ArtistGraphicalFront.svg" class="explore-artist-layer layer-front"
+                    alt="Front Cover" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Fav. Artists Section -->
+            <div class="artist-fav-section" id="artistFavSection">
+              <h3 class="artist-fav-heading">Fav. Artists</h3>
+              <div class="artist-fav-list" id="artistFavList">
+                <!-- Dynamically populated top 2 artists -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Individual Artist View Left (Image 2) -->
+          <div class="artist-detail-left" id="artistDetailLeft" style="display: none;">
+            <div class="artist-detail-title-row">
+              <div class="equalizer-icon-static" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <h2 class="artist-detail-heading" id="artistDetailHeading">Artist Name</h2>
+            </div>
+
+            <!-- Offset Overlapping Circle Artist Graphic (Image 1 & Image 2) -->
+            <div class="artist-detail-graphic-wrap" id="artistDetailGraphicWrap">
+              <div class="explore-artist-graphic artist-detail-graphic">
+                <img src="assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg" class="explore-artist-layer layer-bg"
+                  id="artistDetailBgImg" alt="Artist Background" />
+                <div class="explore-artist-circle-wrap artist-detail-circle-wrap">
+                  <img src="assets/M logo.png" class="explore-artist-circle-img" id="artistDetailCoverImg"
+                    alt="Artist Cover" />
+                </div>
+                <img src="assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg"
+                  class="explore-artist-layer layer-middle" id="artistDetailMiddleImg" alt="Center Dot" />
+                <img src="assets/LibraryItems/ArtistGraphicalFront.svg" class="explore-artist-layer layer-front"
+                  alt="Front Cover" />
+              </div>
+            </div>
+
+            <!-- Fav. Songs Section for this Artist -->
+            <div class="artist-fav-section" id="artistFavSongsSection">
+              <h3 class="artist-fav-heading">Fav. Songs</h3>
+              <div class="artist-fav-songs-list" id="artistFavSongsList">
+                <!-- Dynamically populated top 3 songs for this artist -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PC Graphical Albums Left-Side Section -->
+        <div class="albums-left-section" id="albumsLeftSection" style="display: none;">
+          <!-- 1. Albums Main Left (Image 1) -->
+          <div class="albums-main-left" id="albumsMainLeft">
+            <h2 class="albums-section-heading">Albums</h2>
+
+            <div class="albums-main-graphic-wrap" id="albumsMainGraphicWrap">
+              <!-- Ring Graphic SVG from Assets/Library Items/ -->
+              <img src="assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg" class="albums-arc-svg" id="albumMainBgImg"
+                alt="Album Rings Graphic" />
+
+              <!-- Center Album Information (Middle album name + artist) -->
+              <div class="album-center-info" id="albumMainCenterInfo">
+                <span class="album-center-title" id="albumMainCenterTitle">Album Name</span>
+                <span class="album-center-artist" id="albumMainCenterArtist">Artist Name</span>
+              </div>
+
+              <!-- Top Tilted Random Album Card -->
+              <div class="album-arc-card card-top" id="albumMainCardTop" tabindex="0" role="button" title="Open Album">
+                <img src="assets/M logo for music items.png" class="album-arc-img" id="albumMainImgTop"
+                  alt="Top Album" />
+              </div>
+
+              <!-- Center Featured Random Album Card -->
+              <div class="album-arc-card card-center" id="albumMainCardCenter" tabindex="0" role="button"
+                title="Open Album">
+                <img src="assets/M logo for music items.png" class="album-arc-img" id="albumMainImgCenter"
+                  alt="Center Album" />
+              </div>
+
+              <!-- Bottom Tilted Random Album Card -->
+              <div class="album-arc-card card-bottom" id="albumMainCardBottom" tabindex="0" role="button"
+                title="Open Album">
+                <img src="assets/M logo for music items.png" class="album-arc-img" id="albumMainImgBottom"
+                  alt="Bottom Album" />
+              </div>
+            </div>
+
+            <!-- Fav. Albums Section -->
+            <div class="albums-fav-section" id="albumsFavSection">
+              <h3 class="albums-fav-heading">Fav. Albums</h3>
+              <div class="albums-fav-list" id="albumsFavList">
+                <!-- Dynamically populated top 2 albums -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Individual Album Left (Same structure as Albums Main Left) -->
+          <div class="album-detail-left" id="albumDetailLeft" style="display: none;">
+            <h2 class="albums-section-heading" id="albumDetailHeading">Album</h2>
+
+            <div class="albums-main-graphic-wrap" id="albumDetailGraphicWrap">
+              <!-- Ring Graphic SVG from Assets/Library Items/ -->
+              <img src="assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg" class="albums-arc-svg"
+                id="albumDetailBgImg" alt="Album Rings Graphic" />
+
+              <!-- Selected Album Information -->
+              <div class="album-center-info" id="albumDetailCenterInfo">
+                <span class="album-center-title" id="albumDetailSubTitle">Album Name</span>
+                <span class="album-center-artist" id="albumDetailSubArtist">Artist Name</span>
+              </div>
+
+              <!-- Single Selected Album Card in the Center Position -->
+              <div class="album-arc-card card-center" id="albumDetailCard" tabindex="0" role="button"
+                title="Play Album">
+                <img src="assets/M logo for music items.png" class="album-arc-img" id="albumDetailCoverImg"
+                  alt="Selected Album Cover" />
+              </div>
+            </div>
+
+            <!-- Fav. Songs Section for this Album -->
+            <div class="albums-fav-section" id="albumDetailFavSection">
+              <h3 class="albums-fav-heading">Fav. Songs</h3>
+              <div class="albums-fav-list" id="albumDetailFavList">
+                <!-- Dynamically populated up to 2 favorite songs for this album -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PC Graphical Favourites Left-Side Section (Image 3) -->
+        <div class="favourites-left-section" id="favouritesLeftSection" style="display: none;">
+          <h2 class="favourites-section-heading">Favourites</h2>
+
+          <div class="favourites-pills-container" id="favouritesPillsContainer">
+            <div class="fav-pill-card fav-pill-1" id="favPill1" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="fav-pill-img" id="favPillImg1" alt="Fav 1" />
+            </div>
+            <div class="fav-pill-card fav-pill-2" id="favPill2" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="fav-pill-img" id="favPillImg2" alt="Fav 2" />
+            </div>
+            <div class="fav-pill-card fav-pill-3" id="favPill3" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="fav-pill-img" id="favPillImg3" alt="Fav 3" />
+            </div>
+            <div class="fav-pill-card fav-pill-4" id="favPill4" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="fav-pill-img" id="favPillImg4" alt="Fav 4" />
+            </div>
+            <div class="fav-pill-card fav-pill-5" id="favPill5" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="fav-pill-img" id="favPillImg5" alt="Fav 5" />
+            </div>
+          </div>
+
+          <!-- Fav. Albums Section on Favourites Page -->
+          <div class="favourites-fav-section" id="favouritesFavSection">
+            <h3 class="favourites-fav-heading">Fav. Albums</h3>
+            <div class="favourites-fav-list" id="favouritesFavList">
+              <!-- Dynamically populated top 2 albums -->
+            </div>
+          </div>
+        </div>
+
+        <!-- PC Graphical Genre Left-Side Section (Image 4) -->
+        <div class="genre-left-section" id="genreLeftSection" style="display: none;">
+          <h2 class="genre-section-heading">Genre</h2>
+
+          <div class="genre-cards-container" id="genreCardsContainer">
+            <div class="genre-card genre-card-1" id="genreCard1" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="genre-card-img" id="genreCardImg1" alt="Genre Card 1" />
+            </div>
+            <div class="genre-card genre-card-2" id="genreCard2" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="genre-card-img" id="genreCardImg2" alt="Genre Card 2" />
+            </div>
+            <div class="genre-card genre-card-3" id="genreCard3" tabindex="0" role="button">
+              <img src="assets/M logo.png" class="genre-card-img" id="genreCardImg3" alt="Genre Card 3" />
+            </div>
+          </div>
+
+          <!-- 8 Organic Genre Selection Chips -->
+          <div class="genre-chips-container" id="genreChipsContainer">
+            <button class="genre-chip active" data-genre="Melancholic">Melancholic</button>
+            <button class="genre-chip" data-genre="Sad">Sad</button>
+            <button class="genre-chip" data-genre="Dreamy">Dreamy</button>
+            <button class="genre-chip" data-genre="Chill">Chill</button>
+            <button class="genre-chip" data-genre="Heartbreak">Heartbreak</button>
+            <button class="genre-chip" data-genre="Romantic">Romantic</button>
+            <button class="genre-chip" data-genre="Nostalgic">Nostalgic</button>
+            <button class="genre-chip" data-genre="Energetic">Energetic</button>
+          </div>
+        </div>
+
+        <!-- PC Graphical Folders Left-Side Section -->
+        <div class="folders-left-section" id="foldersLeftSection" style="display: none;">
+          <!-- 1. Folders Main Left -->
+          <div class="folders-main-left" id="foldersMainLeft">
+            <h2 class="folders-section-heading">Folder</h2>
+
+            <!-- Exact same Folders Graphical Interface from Row 2 Item 2 in Library page -->
+            <div class="folders-main-graphic-wrap">
+              <div class="explore-item explore-folders-item folders-page-left-item" id="foldersMainGraphicItem"
+                title="Folders">
+                <div class="explore-folders-graphic folders-page-left-graphic">
+                  <div class="explore-folder-card folder-card-1">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderMainImg1" alt="Folder 1" />
+                  </div>
+                  <div class="explore-folder-card folder-card-2">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderMainImg2" alt="Folder 2" />
+                  </div>
+                  <div class="explore-folder-card folder-card-3">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderMainImg3" alt="Folder 3" />
+                  </div>
+                  <div class="explore-folder-card folder-card-4">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderMainImg4" alt="Folder 4" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fav. Folders Section -->
+            <div class="folders-fav-section" id="foldersFavSection">
+              <h3 class="folders-fav-heading">Fav. Folders</h3>
+              <div class="folders-fav-list" id="foldersFavList">
+                <!-- Dynamically populated up to 2 favorite folders -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Individual Folder Detail Left (When a folder is opened) -->
+          <div class="folder-detail-left" id="folderDetailLeft" style="display: none;">
+            <h2 class="folders-section-heading" id="folderDetailHeading">Folder</h2>
+
+            <!-- Exact same Folders Graphical Interface from Row 2 Item 2 in Library page -->
+            <div class="folders-main-graphic-wrap">
+              <div class="explore-item explore-folders-item folders-page-left-item" id="folderDetailGraphicItem"
+                title="Folders">
+                <div class="explore-folders-graphic folders-page-left-graphic">
+                  <div class="explore-folder-card folder-card-1">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderDetailImg1" alt="Folder 1" />
+                  </div>
+                  <div class="explore-folder-card folder-card-2">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderDetailImg2" alt="Folder 2" />
+                  </div>
+                  <div class="explore-folder-card folder-card-3">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderDetailImg3" alt="Folder 3" />
+                  </div>
+                  <div class="explore-folder-card folder-card-4">
+                    <img src="assets/M logo.png" class="explore-folder-img" id="folderDetailImg4" alt="Folder 4" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fav. Songs Section for this Folder -->
+            <div class="folders-fav-section" id="folderDetailFavSection">
+              <h3 class="folders-fav-heading">Fav. Songs</h3>
+              <div class="folders-fav-list" id="folderDetailFavList">
+                <!-- Dynamically populated top 2 favorite songs in this folder -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PC Graphical Recorder Left-Side Section -->
+        <div class="recorder-left-section" id="recorderLeftSection" style="display: none;">
+          <div class="recorder-main-left" id="recorderMainLeft">
+            <h2 class="recorder-section-heading">Recorder</h2>
+
+            <div class="recorder-graphic-widget-wrap">
+              <div class="recorder-graphic-widget" id="recorderGraphicWidget">
+                <svg class="recorder-main-svg" viewBox="0 0 446 418" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Note card -->
+                  <path class="recorder-card-bg"
+                    d="M39 10.3147C39 4.61805 45.5089 0 53.5381 0L382.462 0C390.491 0 397 4.61806 397 10.3147V243.685C397 249.382 390.491 254 382.462 254H53.5381C45.5089 254 39 249.382 39 243.685V10.3147Z"
+                    fill="#F5F5F5" />
+                  <path class="recorder-card-dots"
+                    d="M67.8778 41.504C67.1818 41.504 66.5938 41.276 66.1138 40.82C65.6578 40.364 65.4298 39.776 65.4298 39.056C65.4298 38.336 65.6578 37.748 66.1138 37.292C66.5938 36.836 67.1818 36.608 67.8778 36.608C68.5978 36.608 69.1858 36.836 69.6418 37.292C70.0978 37.748 70.3258 38.336 70.3258 39.056C70.3258 39.776 70.0978 40.364 69.6418 40.82C69.1858 41.276 68.5978 41.504 67.8778 41.504ZM76.9833 41.504C76.2873 41.504 75.6993 41.276 75.2193 40.82C74.7633 40.364 74.5353 39.776 74.5353 39.056C74.5353 38.336 74.7633 37.748 75.2193 37.292C75.6993 36.836 76.2873 36.608 76.9833 36.608C77.7033 36.608 78.2913 36.836 78.7473 37.292C79.2033 37.748 79.4313 38.336 79.4313 39.056C79.4313 39.776 79.2033 40.364 78.7473 40.82C78.2913 41.276 77.7033 41.504 76.9833 41.504ZM86.0887 41.504C85.3927 41.504 84.8047 41.276 84.3247 40.82C83.8687 40.364 83.6407 39.776 83.6407 39.056C83.6407 38.336 83.8687 37.748 84.3247 37.292C84.8047 36.836 85.3927 36.608 86.0887 36.608C86.8087 36.608 87.3967 36.836 87.8527 37.292C88.3087 37.748 88.5367 38.336 88.5367 39.056C88.5367 39.776 88.3087 40.364 87.8527 40.82C87.3967 41.276 86.8087 41.504 86.0887 41.504Z"
+                    fill="#2E2E2E" fill-opacity="0.8" />
+
+                  <!-- Cassette body -->
+                  <path class="recorder-cassette-body"
+                    d="M0 174.315C0 168.618 8.10887 164 18.1117 164H427.888C437.891 164 446 168.618 446 174.315V407.685C446 413.382 437.891 418 427.888 418H18.1117C8.10887 418 0 413.382 0 407.685L0 174.315Z"
+                    fill="black" />
+
+                  <!-- Tape connecting bands -->
+                  <rect class="recorder-tape-belt-top" x="127.766" y="268.146" width="186.546" height="8" rx="4"
+                    transform="rotate(-7.56938 127.766 268.146)" fill="#2E2E2E" />
+                  <rect class="recorder-tape-belt-bot" width="188.441" height="8" rx="4"
+                    transform="matrix(-0.991286 -0.131727 -0.131727 0.991286 311.853 328.822)" fill="#2E2E2E" />
+
+                  <!-- Left Spool Group -->
+                  <g class="recorder-spool-left" style="transform-origin: 134.5px 290.5px;">
+                    <circle cx="134.5" cy="290.5" r="57.5" fill="white" />
+                    <circle cx="134.5" cy="290.5" r="15.5" fill="black" />
+                    <path d="M131.673 309C122.323 308.133 115 300.187 115 290.514C115 280.728 122.494 272.71 132 272"
+                      stroke="#2E2E2E" stroke-width="8" />
+                  </g>
+
+                  <!-- Right Spool Group -->
+                  <g class="recorder-spool-right" style="transform-origin: 311.5px 290.5px;">
+                    <circle cx="311.5" cy="290.5" r="57.5" fill="white" />
+                    <circle cx="312" cy="291" r="39" fill="black" />
+                    <path
+                      d="M308 332.82C309.284 332.939 310.584 333 311.898 333C335.15 333 354 313.972 354 290.5C354 267.028 335.15 248 311.898 248C310.839 248 309.789 248.039 308.75 248.117"
+                      stroke="#2E2E2E" stroke-width="8" />
+                  </g>
+
+                  <!-- Bottom Right Counter/Arcs -->
+                  <path
+                    d="M405 399.943C405.419 399.981 405.843 400 406.271 400C413.853 400 420 393.956 420 386.5C420 379.044 413.853 373 406.271 373C405.926 373 405.584 373.013 405.245 373.037"
+                    stroke="#DEDEDE" stroke-width="8" />
+                  <path
+                    d="M394.723 380.376C394.53 380.74 394.352 381.117 394.19 381.505C391.324 388.368 394.572 396.259 401.446 399.13C408.32 402.001 416.216 398.764 419.082 391.901C419.213 391.588 419.331 391.273 419.436 390.957"
+                    stroke="#DEDEDE" stroke-width="8" />
+                </svg>
+
+                <!-- Interactive Action Button (Top Right of cassette) -->
+                <button class="recorder-action-btn" id="recorderActionBtn" title="Start Recording"
+                  aria-label="Start Recording">
+                  <img src="assets/LibraryItems/RecordingsUI/StartRecordingBtn.svg" id="recorderActionBtnImg"
+                    alt="Record" />
+                </button>
+
+                <!-- Indicator Light (Bottom Left of cassette) -->
+                <div class="recorder-indicator" id="recorderIndicator" title="Ready">
+                  <img src="assets/LibraryItems/RecordingsUI/NormalRedCircle.svg" id="recorderIndicatorImg"
+                    alt="Status" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PC Expanded Player Left-Side Section (Artist1.png / Artist2.png) -->
+        <div class="expanded-player-left-section" id="expandedPlayerLeftSection" style="display: none;">
+          <!-- Top Albums of Current Artist -->
+          <div class="expanded-top-albums-group">
+            <h2 class="expanded-section-heading">Top Albums</h2>
+            <div class="expanded-top-albums-grid" id="expandedTopAlbumsGrid">
+              <!-- Dynamically populated 2-column album grid -->
+            </div>
+          </div>
+
+          <!-- User Playlists -->
+          <div class="expanded-playlists-group">
+            <h2 class="expanded-section-heading">Playlists</h2>
+            <div class="expanded-playlists-list" id="expandedPlaylistsList">
+              <!-- Dynamically populated user playlists -->
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -283,9 +679,9 @@
     <section class="library-section" aria-label="Songs Library">
       <!-- Mobile Song List Top Header (Shown on mobile only) -->
       <header class="mobile-top-header" id="mobileTopHeader">
-        <div class="mobile-logo-brand" id="mobileLogoBtn" title="Musico Home">
-          <img src="assets/Mlogo.png" alt="Musico Logo" class="mobile-logo-icon" />
-          <span class="mobile-brand-text">usico</span>
+        <div class="mobile-logo-brand" id="mobileLogoBtn" title="Atsuko Home">
+          <img src="assets/atsuko.svg" alt="Atsuko Logo" class="mobile-logo-icon" />
+          <span class="mobile-brand-text">tsuko</span>
         </div>
         <button class="mobile-search-btn" id="mobileSearchBtn" title="Search Songs" aria-label="Search Songs">
           <img src="assets/Dark Mode/DarkModeSearchIcon.png" alt="Search" class="mobile-search-icon" />
@@ -301,9 +697,12 @@
 
       <!-- Mobile Side Controls: Add Music Folder (Black), Settings (Gray) & Vertical Scrollbar (Black Track + Gray Thumb) -->
       <div class="mobile-side-controls" id="mobileSideControls" aria-label="Mobile Quick Controls">
-        <button class="mobile-side-btn add-btn" id="mobileSideAddBtn" title="Add Music Folder" aria-label="Add Music Folder"></button>
-        <button class="mobile-side-btn settings-btn" id="mobileSideSettingsBtn" title="Settings" aria-label="Settings"></button>
-        <div class="mobile-scrollbar-track" id="mobileScrollbarTrack" role="scrollbar" aria-label="Song List Scrollbar" tabindex="0">
+        <button class="mobile-side-btn add-btn" id="mobileSideAddBtn" title="Add Music Folder"
+          aria-label="Add Music Folder"></button>
+        <button class="mobile-side-btn settings-btn" id="mobileSideSettingsBtn" title="Settings"
+          aria-label="Settings"></button>
+        <div class="mobile-scrollbar-track" id="mobileScrollbarTrack" role="scrollbar" aria-label="Song List Scrollbar"
+          tabindex="0">
           <div class="mobile-scrollbar-thumb" id="mobileScrollbarThumb"></div>
         </div>
       </div>
@@ -318,19 +717,28 @@
           <button class="circle-action-btn" id="settingsBtn" title="Settings" aria-label="Settings">
             <img src="assets/Dark Mode/DarkModeSettings.png" alt="Settings" class="action-btn-icon" />
           </button>
-          <div class="profile-badge-pill" id="profileBadge" title="User Profile: Mohit">
-            <span class="profile-user-name">Mohit</span>
-            <img src="assets/ProfilePic.png" alt="Mohit Avatar" class="profile-avatar-img" />
+          <div class="profile-badge-pill" id="profileBadge" title="User Profile: USER">
+            <span class="profile-user-name" id="navProfileUserName">USER</span>
+            <img src="assets/default-avatar.svg" alt="User Avatar" class="profile-avatar-img" />
           </div>
         </div>
       </header>
 
       <!-- 4 Visual Buttons under Songs heading (PC / Desktop View) -->
-      <div class="library-equalizer-bars" role="group" aria-label="PC View Modes">
-        <button class="eq-bar active" id="eqBar1" data-mode="1" type="button" aria-label="All Songs View" title="All Songs (A/D)"></button>
-        <button class="eq-bar" id="eqBar2" data-mode="2" type="button" aria-label="Lyrics View" title="Lyrics View (A/D)"></button>
-        <button class="eq-bar" id="eqBar3" data-mode="3" type="button" aria-label="Grid View" title="Column / Grid View (A/D)"></button>
-        <button class="eq-bar" id="eqBar4" data-mode="4" type="button" aria-label="Up Next View" title="Up Next / Queue View (A/D)"></button>
+      <div class="library-equalizer-bars" id="libraryEqualizerBars" role="group" aria-label="PC View Modes">
+        <button class="eq-bar active" id="eqBar1" data-mode="1" type="button" aria-label="All Songs View"
+          title="All Songs (A/D)"></button>
+        <button class="eq-bar" id="eqBar2" data-mode="2" type="button" aria-label="Lyrics View"
+          title="Lyrics View (A/D)"></button>
+        <button class="eq-bar" id="eqBar3" data-mode="3" type="button" aria-label="Grid View"
+          title="Column / Grid View (A/D)"></button>
+        <button class="eq-bar" id="eqBar4" data-mode="4" type="button" aria-label="Up Next View"
+          title="Up Next / Queue View (A/D)"></button>
+      </div>
+
+      <!-- Column View Single Vertical Control (|) -->
+      <div class="column-view-single-bar" id="columnViewSingleBar" style="display: none;" aria-hidden="true">
+        <span class="eq-bar active"></span>
       </div>
 
       <!-- Scrollable Songs List (Used for Mode 1: List, Mode 3: 3-Col Grid, Mode 4: Queue) -->
@@ -339,12 +747,14 @@
       </div>
 
       <!-- PC Lyrics Container (Mode 2) -->
-      <div class="pc-lyrics-container" id="pcLyricsContainer" style="display: none;" role="region" aria-label="Song Lyrics">
+      <div class="pc-lyrics-container" id="pcLyricsContainer" style="display: none;" role="region"
+        aria-label="Song Lyrics">
         <!-- Rendered dynamically via JavaScript -->
       </div>
 
       <!-- Explore / Library Right-Side Navigation (Artists, Albums, Favourite, Folders, Genre, Recorder) -->
-      <div class="explore-right-nav" id="exploreRightNav" style="display: none;" role="navigation" aria-label="Explore Library Navigation">
+      <div class="explore-right-nav" id="exploreRightNav" style="display: none;" role="navigation"
+        aria-label="Explore Library Navigation">
         <div class="explore-nav-list">
           <div class="explore-nav-item" data-explore-target="artists" tabindex="0" role="button">Artists</div>
           <div class="explore-nav-item" data-explore-target="albums" tabindex="0" role="button">Albums</div>
@@ -352,6 +762,150 @@
           <div class="explore-nav-item" data-explore-target="folders" tabindex="0" role="button">Folders</div>
           <div class="explore-nav-item" data-explore-target="genre" tabindex="0" role="button">Genre</div>
           <div class="explore-nav-item" data-explore-target="recorder" tabindex="0" role="button">Recorder</div>
+        </div>
+      </div>
+
+      <!-- PC Expanded Player / Full Player View (Artist1.png / Artist2.png) -->
+      <div class="expanded-player-right-section" id="expandedPlayerRightSection" style="display: none;" role="region"
+        aria-label="Expanded Music Player">
+        <!-- Top Navigation Header -->
+        <div class="expanded-player-header">
+          <button class="playlist-back-btn expanded-player-back-btn" id="expandedPlayerBackBtn" title="Back to Player">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Player
+          </button>
+        </div>
+
+        <!-- Single Vertical Control Bar (| |) -->
+        <div class="expanded-single-bar-control" id="expandedSingleBarControl" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
+
+        <!-- Artist Details Section -->
+        <div class="expanded-artist-details-block" id="expandedArtistDetailsBlock">
+          <p class="expanded-artist-bio" id="expandedArtistBio">
+            <strong class="expanded-artist-name" id="expandedArtistName">Unknown Artist</strong>
+            <span class="expanded-artist-bio-text" id="expandedArtistBioText">No details available for this
+              artist.</span>
+          </p>
+          <div class="expanded-artist-stats" id="expandedArtistStats">
+            <!-- Listeners & Scrobbles -->
+          </div>
+          <div class="expanded-artist-divider"></div>
+        </div>
+
+        <!-- Action Row: Favourite + Play Next (Left) and Genre Chips (Right) -->
+        <div class="expanded-actions-genres-row">
+          <div class="expanded-action-buttons">
+            <button class="expanded-action-btn" id="expandedFavBtn" type="button"
+              title="Toggle Favourite">Favourite</button>
+            <button class="expanded-action-btn" id="expandedPlayNextBtn" type="button" title="Play Next">Play
+              Next</button>
+          </div>
+          <div class="expanded-genres-scroll-container" id="expandedGenresScrollContainer">
+            <div class="expanded-genres-chips-row" id="expandedGenresChipsRow">
+              <button class="expanded-genre-chip active" data-genre="Melancholic">Melancholic</button>
+              <button class="expanded-genre-chip" data-genre="Sad">Sad</button>
+              <button class="expanded-genre-chip" data-genre="Chill">Chill</button>
+              <button class="expanded-genre-chip" data-genre="Heartbreak">Heartbreak</button>
+              <button class="expanded-genre-chip" data-genre="Dreamy">Dreamy</button>
+              <button class="expanded-genre-chip" data-genre="Romantic">Romantic</button>
+              <button class="expanded-genre-chip" data-genre="Nostalgic">Nostalgic</button>
+              <button class="expanded-genre-chip" data-genre="Energetic">Energetic</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Media & Up Next Row -->
+        <div class="expanded-media-queue-row">
+          <!-- Main Current Song Large Square Cover Art + Creative Synchronized Lyrics Overlay -->
+          <div class="expanded-cover-art-container" id="expandedCoverArtContainer">
+            <img src="assets/M logo.png" alt="Current Song Artwork" class="expanded-cover-art-img"
+              id="expandedMainCoverImg" />
+            <div class="expanded-lyrics-visual-overlay" id="expandedLyricsVisualOverlay" style="display: none;">
+              <div class="expanded-lyrics-text-lines" id="expandedLyricsTextLines"></div>
+              <div class="expanded-lyrics-dots" id="expandedLyricsDots" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span class="active"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Up Next Section -->
+          <div class="expanded-up-next-container" id="expandedUpNextContainer">
+            <div class="expanded-up-next-header">
+              <h3 class="expanded-up-next-title">Up Next</h3>
+              <button class="expanded-up-next-collapse-btn" id="expandedUpNextCollapseBtn" title="Collapse Player"
+                aria-label="Collapse Player">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+            </div>
+            <div class="expanded-up-next-list" id="expandedUpNextList" role="list">
+              <!-- Dynamically populated queue songs (approx 4 visible) -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Playback Controls Row -->
+        <div class="expanded-bottom-playback-bar">
+          <div class="expanded-bottom-controls-row">
+            <div class="expanded-transport-group">
+              <!-- Previous Button -->
+              <button class="expanded-ctrl-btn" id="expandedPrevBtn" title="Previous Track" aria-label="Previous Track">
+                <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                  <path d="M12 4L5 11L12 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                  <path d="M19 4L12 11L19 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </button>
+              <!-- Play / Pause Button -->
+              <button class="expanded-ctrl-btn play-pause-btn" id="expandedPlayPauseBtn" title="Play or Pause"
+                aria-label="Play or Pause">
+                <svg class="expanded-play-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M6.5 4.8C6.5 3.6 7.8 2.9 8.8 3.5L19.5 10.7C20.4 11.3 20.4 12.7 19.5 13.3L8.8 20.5C7.8 21.1 6.5 20.4 6.5 19.2V4.8Z"
+                    stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <svg class="expanded-pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  style="display: none;">
+                  <rect x="5.5" y="4" width="4" height="16" rx="2" stroke="currentColor" stroke-width="3" fill="none" />
+                  <rect x="14.5" y="4" width="4" height="16" rx="2" stroke="currentColor" stroke-width="3"
+                    fill="none" />
+                </svg>
+              </button>
+              <!-- Next Button -->
+              <button class="expanded-ctrl-btn" id="expandedNextBtn" title="Next Track" aria-label="Next Track">
+                <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                  <path d="M5 4L12 11L5 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                  <path d="M12 4L19 11L12 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Current Song Title -->
+            <span class="expanded-song-title" id="expandedSongTitle">No Songs</span>
+
+            <!-- Time Display (Monospace) -->
+            <span class="expanded-time-display" id="expandedTimeDisplay">0:00/0:00</span>
+          </div>
+
+          <!-- Bottom Full-Width Timeline Progress Track -->
+          <div class="expanded-progress-track" id="expandedProgressTrack" role="progressbar" aria-label="Track Progress"
+            tabindex="0">
+            <div class="expanded-progress-fill" id="expandedProgressFill"></div>
+          </div>
         </div>
       </div>
 
@@ -369,20 +923,98 @@
             <div class="loading-progress-fill" id="loadingProgressBarFill" style="width: 0%;"></div>
           </div>
         </div>
+      </div> <!-- Artist Section Mini Player (PC View Only - Exact Frame 7 Match) -->
+      <div class="artist-mini-player" id="artistMiniPlayer" style="display: none;" role="region"
+        aria-label="Artist Now Playing Mini Player">
+        <!-- Squircle Cover Art emerging from behind controls -->
+        <div class="artist-mini-cover-wrapper" id="artistMiniCoverWrapper">
+          <div class="artist-mini-cover-card" id="artistMiniCoverCard" tabindex="0" role="button" title="Expand Player">
+            <img src="assets/M logo.png" alt="Album Cover Art" id="artistMiniCoverImg"
+              class="artist-mini-cover-img fallback-art" />
+          </div>
+        </div>
+
+        <!-- Solid Black Controls Bar -->
+        <div class="artist-mini-bar">
+          <!-- Top Row: Controls, Song Name, Fav, Pn, Time -->
+          <div class="artist-mini-controls-row">
+            <div class="artist-mini-left-group">
+              <div class="artist-mini-transport">
+                <!-- Previous Button (<<) -->
+                <button class="artist-mini-ctrl-btn" id="artistMiniPrevBtn" title="Previous Track"
+                  aria-label="Previous Track">
+                  <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                    <path d="M12 4L5 11L12 18" stroke="white" stroke-width="3.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                    <path d="M19 4L12 11L19 18" stroke="white" stroke-width="3.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <!-- Play / Pause Button (▷ / ||) -->
+                <button class="artist-mini-ctrl-btn play-pause-btn" id="artistMiniPlayPauseBtn" title="Play or Pause"
+                  aria-label="Play or Pause">
+                  <svg class="artist-mini-play-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M6.5 4.8C6.5 3.6 7.8 2.9 8.8 3.5L19.5 10.7C20.4 11.3 20.4 12.7 19.5 13.3L8.8 20.5C7.8 21.1 6.5 20.4 6.5 19.2V4.8Z"
+                      stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <svg class="artist-mini-pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    style="display: none;">
+                    <rect x="5.5" y="4" width="4" height="16" rx="2" stroke="white" stroke-width="3" fill="none" />
+                    <rect x="14.5" y="4" width="4" height="16" rx="2" stroke="white" stroke-width="3" fill="none" />
+                  </svg>
+                </button>
+                <!-- Next Button (>>) -->
+                <button class="artist-mini-ctrl-btn" id="artistMiniNextBtn" title="Next Track" aria-label="Next Track">
+                  <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                    <path d="M5 4L12 11L5 18" stroke="white" stroke-width="3.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                    <path d="M12 4L19 11L12 18" stroke="white" stroke-width="3.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Current Song Title -->
+              <span class="artist-mini-song-title" id="artistMiniSongTitle">No Songs</span>
+            </div>
+
+            <div class="artist-mini-right-group">
+              <!-- Static Labels (Fav. & Pn) -->
+              <span class="artist-mini-label fav-btn" id="artistMiniFavBtn" role="button" tabindex="0"
+                title="Toggle Favourite">Fav.</span>
+              <span class="artist-mini-label">Pn</span>
+
+              <!-- Time Display -->
+              <span class="artist-mini-time-display" id="artistMiniTimeDisplay">0:00/0:00</span>
+            </div>
+          </div>
+
+          <!-- Bottom Row: Horizontal Timeline Progress Bar Across Full Width -->
+          <div class="artist-mini-progress-track" id="artistMiniProgressTrack" role="progressbar"
+            aria-label="Track Progress" tabindex="0">
+            <div class="artist-mini-progress-fill" id="artistMiniProgressFill"></div>
+          </div>
+        </div>
       </div>
+
+      <!-- Loading Progress Popup for Large Music Libraries -->
 
       <!-- Mobile Compact Now Playing Pop-up (IMAGE 3) -->
       <div class="mobile-compact-popup" id="mobileCompactPopup" role="region" aria-label="Now Playing Compact Control">
         <div class="mobile-popup-cover-wrapper" id="mobilePopupCoverWrapper">
-          <img src="assets/M logo for music items.png" alt="Cover Art" id="mobilePopupCoverArt" class="mobile-popup-cover fallback-art" />
+          <img src="assets/M logo for music items.png" alt="Cover Art" id="mobilePopupCoverArt"
+            class="mobile-popup-cover fallback-art" />
         </div>
         <div class="mobile-popup-body" id="mobilePopupBody">
           <div class="mobile-popup-top-row">
             <div class="mobile-popup-controls">
-              <button class="mobile-popup-ctrl-btn" id="mobilePopupPrevBtn" title="Previous Track" aria-label="Previous Track">
+              <button class="mobile-popup-ctrl-btn" id="mobilePopupPrevBtn" title="Previous Track"
+                aria-label="Previous Track">
                 <img src="assets/Dark Mode/DarkModePrevBtn.svg" alt="Previous" class="mobile-popup-icon" />
               </button>
-              <button class="mobile-popup-ctrl-btn play-btn" id="mobilePopupPlayPauseBtn" title="Play or Pause" aria-label="Play or Pause">
+              <button class="mobile-popup-ctrl-btn play-btn" id="mobilePopupPlayPauseBtn" title="Play or Pause"
+                aria-label="Play or Pause">
                 <img src="assets/Plausebtn.svg" alt="Play" class="mobile-popup-icon" />
               </button>
               <button class="mobile-popup-ctrl-btn" id="mobilePopupNextBtn" title="Next Track" aria-label="Next Track">
@@ -391,7 +1023,8 @@
             </div>
             <span class="mobile-popup-time" id="mobilePopupTimeDisplay">0:00/0:00</span>
           </div>
-          <div class="mobile-popup-progress-track" id="mobilePopupProgressTrack" role="progressbar" aria-label="Track Progress" tabindex="0">
+          <div class="mobile-popup-progress-track" id="mobilePopupProgressTrack" role="progressbar"
+            aria-label="Track Progress" tabindex="0">
             <div class="mobile-popup-progress-bar" id="mobilePopupProgressBar"></div>
           </div>
         </div>
@@ -417,7 +1050,8 @@
       </nav>
 
       <!-- Mobile Full Now Playing Screen (IMAGE 2 - Animated White Content Area) -->
-      <div class="mobile-full-player" id="mobileFullPlayer" role="dialog" aria-modal="true" aria-label="Full Now Playing Screen">
+      <div class="mobile-full-player" id="mobileFullPlayer" role="dialog" aria-modal="true"
+        aria-label="Full Now Playing Screen">
         <!-- Swipe Down Indicator Handle -->
         <div class="mobile-swipe-handle" id="mobileSwipeHandle" title="Swipe down to return">
           <span class="swipe-pill"></span>
@@ -445,14 +1079,17 @@
 
             <!-- Large Squircle Album Art with Options Button -->
             <div class="mobile-full-art-container">
-              <img src="assets/M logo.png" alt="Album Art" id="mobileFullAlbumArt" class="mobile-full-art fallback-art" />
-              <button class="now-playing-options-btn mobile-full-options-btn" id="mobileFullOptionsBtn" title="Song Options" aria-label="Song Options">
+              <img src="assets/M logo.png" alt="Album Art" id="mobileFullAlbumArt"
+                class="mobile-full-art fallback-art" />
+              <button class="now-playing-options-btn mobile-full-options-btn" id="mobileFullOptionsBtn"
+                title="Song Options" aria-label="Song Options">
                 <img src="assets/Dark Mode/DarkModeOptions 3 Dots.svg" alt="Options" class="now-playing-options-icon" />
               </button>
             </div>
 
             <!-- Progress Pill Bar with Track Title -->
-            <div class="mobile-full-progress-bar-container" id="mobileFullProgressBarContainer" role="progressbar" aria-label="Track Progress" tabindex="0">
+            <div class="mobile-full-progress-bar-container" id="mobileFullProgressBarContainer" role="progressbar"
+              aria-label="Track Progress" tabindex="0">
               <div class="mobile-full-progress-pill" id="mobileFullProgressPill"></div>
               <span class="mobile-full-song-title" id="mobileFullTitle">No Songs</span>
             </div>
@@ -460,10 +1097,12 @@
             <!-- Playback Controls Row: <<  ▷  >>    Time -->
             <div class="mobile-full-controls-row">
               <div class="mobile-full-transport-group">
-                <button class="mobile-full-ctrl-btn" id="mobileFullPrevBtn" title="Previous Track" aria-label="Previous Track">
+                <button class="mobile-full-ctrl-btn" id="mobileFullPrevBtn" title="Previous Track"
+                  aria-label="Previous Track">
                   <img src="assets/Dark Mode/DarkModePrevBtn.svg" alt="Previous" class="mobile-ctrl-icon" />
                 </button>
-                <button class="mobile-full-ctrl-btn play-btn" id="mobileFullPlayPauseBtn" title="Play or Pause" aria-label="Play or Pause">
+                <button class="mobile-full-ctrl-btn play-btn" id="mobileFullPlayPauseBtn" title="Play or Pause"
+                  aria-label="Play or Pause">
                   <img src="assets/Plausebtn.svg" alt="Play" class="mobile-ctrl-icon" />
                 </button>
                 <button class="mobile-full-ctrl-btn" id="mobileFullNextBtn" title="Next Track" aria-label="Next Track">
@@ -486,7 +1125,8 @@
         </div>
 
         <!-- Full-Screen Up Next Panel (Slides up on upward swipe) -->
-        <div class="mobile-up-next-panel" id="mobileUpNextPanel" role="dialog" aria-modal="true" aria-label="Full Up Next Queue">
+        <div class="mobile-up-next-panel" id="mobileUpNextPanel" role="dialog" aria-modal="true"
+          aria-label="Full Up Next Queue">
           <div class="mobile-up-next-panel-handle" id="mobileUpNextPanelHandle" title="Swipe down to close Up Next">
             <span class="swipe-pill"></span>
           </div>
@@ -500,11 +1140,230 @@
       </div>
     </section>
 
+    <!-- Unified 5-Column Grid Scroll Container (PC Column View Only - Image 1 & Image 2) -->
+    <div class="column-view-unified-scroll" id="columnViewUnifiedScroll" style="display: none;" role="region"
+      aria-label="5-Column Unified Grid">
+      <div class="column-view-left-wrapper">
+        <div class="column-view-left-grid" id="columnViewLeftGrid">
+          <!-- Columns 1 & 2 rendered dynamically -->
+        </div>
+      </div>
+      <div class="column-view-right-wrapper">
+        <div class="column-view-right-grid" id="columnViewRightGrid">
+          <!-- Columns 3, 4 & 5 rendered dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Master PC Scrollable Home Page Container (Figma Source of Truth) -->
+    <div class="home-page-container" id="homePageContainer" style="display: none;" role="region"
+      aria-label="Atsuko Home Page">
+      <!-- Fixed/Sticky Header Bar at top of Home -->
+      <header class="home-header">
+        <div class="home-header-left">
+          <span class="brand-text home-brand-text">tsuko</span>
+          <div class="view-selector-container">
+            <button class="view-selector-pill" id="homeViewSelectorPill" aria-haspopup="true" aria-expanded="false"
+              title="View Options">
+              <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+              <span id="homeViewSelectorLabel">Home</span>
+            </button>
+            <div class="view-dropdown" id="homeViewDropdownMenu" role="menu">
+              <button class="dropdown-item" data-view="home" role="menuitem">Home</button>
+              <button class="dropdown-item" data-view="explore" role="menuitem">Explore / Library</button>
+              <button class="dropdown-item" data-view="all" role="menuitem">Home / All Songs</button>
+              <button class="dropdown-item" data-view="albums" role="menuitem">Albums</button>
+              <button class="dropdown-item" data-view="playlists" role="menuitem">Playlists</button>
+              <button class="dropdown-item" data-view="favorites" role="menuitem">Favorites</button>
+            </div>
+          </div>
+        </div>
+        <div class="home-header-right">
+          <button class="circle-action-btn" id="homeSearchBtn" title="Search Songs" aria-label="Search Songs">
+            <img src="assets/Dark Mode/DarkModeSearchIcon.png" alt="Search" class="action-btn-icon" />
+          </button>
+          <button class="circle-action-btn" id="homeSettingsBtn" title="Settings" aria-label="Settings">
+            <img src="assets/Dark Mode/DarkModeSettings.png" alt="Settings" class="action-btn-icon" />
+          </button>
+          <div class="profile-badge-pill" id="homeProfileBadge" title="User Profile: USER">
+            <span class="profile-user-name" id="homeProfileUserName">USER</span>
+            <img src="assets/default-avatar.svg" alt="User Avatar" class="profile-avatar-img"
+              id="homeProfileAvatarImg" />
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Home Body Content -->
+      <div class="home-scroll-body" id="homeScrollBody">
+        <!-- 1. Top Greeting & 3 Action Buttons -->
+        <div class="home-hero-greeting-block">
+          <div class="home-greeting-headline">
+            <span class="home-wassup-text">Wassup</span>
+            <img src="assets/ProfilePic.png" alt="Profile Avatar" class="home-greeting-avatar-img"
+              id="homeGreetingAvatarImg" />
+            <span class="home-greeting-username" id="homeGreetingUsername">Mohit</span>
+          </div>
+          <p class="home-taste-question">What you want to taste today?</p>
+          <div class="home-action-pills-row">
+            <button class="home-pill-btn" id="homePillAllSongs">All Songs</button>
+            <button class="home-pill-btn" id="homePillGenre">Genre</button>
+            <button class="home-pill-btn" id="homePillShuffle">Shuffle</button>
+          </div>
+        </div>
+
+        <!-- 2. Random Section (Tilted Cover-Art Collage) -->
+        <section class="home-section home-random-section" id="homeRandomSection">
+          <div class="home-random-card">
+            <h2 class="home-section-title random-title">Random</h2>
+            <div class="home-random-tilted-viewport">
+              <div class="home-random-tilted-grid" id="homeRandomGrid">
+                <!-- Dynamically populated tilted cover art cards -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Playlists Section (4 Connected Playlists) -->
+        <section class="home-section home-playlists-section" id="homePlaylistsSection">
+          <h2 class="home-section-title">Playlists</h2>
+          <div class="home-playlists-zigzag-wrap" id="homePlaylistsZigzagWrap">
+            <!-- Dynamically populated 4 zigzag connected playlists -->
+          </div>
+        </section>
+
+        <!-- 4. Genre Section (Horizontal Mood Chips + 2x3 Song Grid) -->
+        <section class="home-section home-genre-section" id="homeGenreSection">
+          <div class="home-genre-chips-scroll home-horizontal-scroll" id="homeGenreChipsScroll">
+            <!-- Dynamically populated genre mood chips -->
+          </div>
+          <div class="home-genre-songs-grid" id="homeGenreSongsGrid">
+            <!-- Dynamically populated 6 genre songs (2 cols x 3 rows) -->
+          </div>
+        </section>
+
+        <!-- 5. Top Artists Section (Horizontal Vinyl Cards) -->
+        <section class="home-section home-top-artists-section" id="homeTopArtistsSection">
+          <h2 class="home-section-title">Top Artists</h2>
+          <div class="home-top-artists-scroll home-horizontal-scroll" id="homeTopArtistsScroll">
+            <!-- Dynamically populated 6-7 vinyl artist cards -->
+          </div>
+        </section>
+
+        <!-- 6. Top Albums Section (Horizontal Album Covers) -->
+        <section class="home-section home-top-albums-section" id="homeTopAlbumsSection">
+          <h2 class="home-section-title">Top Albums</h2>
+          <div class="home-top-albums-scroll home-horizontal-scroll" id="homeTopAlbumsScroll">
+            <!-- Dynamically populated 7-10 album cards -->
+          </div>
+        </section>
+
+        <!-- 7. Recent Plays Section (1 Large Featured + 2 Stacked Horizontal) -->
+        <section class="home-section home-recent-plays-section" id="homeRecentPlaysSection">
+          <h2 class="home-section-title">Recent Plays</h2>
+          <div class="home-recent-plays-layout" id="homeRecentPlaysLayout">
+            <!-- Dynamically populated: Left large featured + Right 2 horizontal -->
+          </div>
+        </section>
+
+        <!-- 8. Favourite Section (5 Portrait Cards) -->
+        <section class="home-section home-favourite-section" id="homeFavouriteSection">
+          <h2 class="home-section-title">Favourite</h2>
+          <div class="home-favourite-cards-row" id="homeFavouriteCardsRow">
+            <!-- Dynamically populated 5 vertical portrait cards -->
+          </div>
+        </section>
+
+        <!-- 9. Recorder Section (Cassette Graphic + 4 Recent Recordings) -->
+        <section class="home-section home-recorder-section" id="homeRecorderSection">
+          <h2 class="home-section-title">Recorder</h2>
+          <div class="home-recorder-layout" id="homeRecorderLayout">
+            <!-- Left: Cassette Graphic Widget; Right: 4 Recent Recordings -->
+          </div>
+        </section>
+
+        <!-- 10. Folders Section (6 Recently Used Folders Grid) -->
+        <section class="home-section home-folders-section" id="homeFoldersSection">
+          <h2 class="home-section-title">Folders</h2>
+          <div class="home-folders-grid" id="homeFoldersGrid">
+            <!-- Dynamically populated 6 folder graphical cards -->
+          </div>
+        </section>
+
+        <!-- Extra bottom spacing so fixed Mini Player never covers Folders content -->
+        <div class="home-bottom-spacer"></div>
+      </div>
+    </div>
+
+    <!-- Dedicated Column View & Home Page Mini Player (PC View Only - Image 1 & Image 2) -->
+    <div class="column-mini-player" id="columnMiniPlayer" style="display: none;" role="region" aria-label="Mini Player">
+      <!-- Squircle Cover Art emerging from behind controls -->
+      <div class="column-mini-cover-wrapper" id="columnMiniCoverWrapper">
+        <div class="column-mini-cover-card" id="columnMiniCoverCard" tabindex="0" role="button" title="Open Player">
+          <img src="assets/M logo.png" alt="Current Cover Art" id="columnMiniCoverImg"
+            class="column-mini-cover-img fallback-art" />
+        </div>
+      </div>
+
+      <!-- Solid Controls Bar -->
+      <div class="column-mini-bar">
+        <div class="column-mini-controls-row">
+          <!-- Transport Controls (<<, ▷/||, >>) -->
+          <div class="column-mini-transport">
+            <button class="column-mini-ctrl-btn" id="columnMiniPrevBtn" title="Previous Track"
+              aria-label="Previous Track">
+              <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                <path d="M12 4L5 11L12 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M19 4L12 11L19 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="column-mini-ctrl-btn play-pause-btn" id="columnMiniPlayPauseBtn" title="Play or Pause"
+              aria-label="Play or Pause">
+              <svg class="column-mini-play-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6.5 4.8C6.5 3.6 7.8 2.9 8.8 3.5L19.5 10.7C20.4 11.3 20.4 12.7 19.5 13.3L8.8 20.5C7.8 21.1 6.5 20.4 6.5 19.2V4.8Z"
+                  stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <svg class="column-mini-pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                style="display: none;">
+                <rect x="5.5" y="4" width="4" height="16" rx="2" stroke="currentColor" stroke-width="3" fill="none" />
+                <rect x="14.5" y="4" width="4" height="16" rx="2" stroke="currentColor" stroke-width="3" fill="none" />
+              </svg>
+            </button>
+            <button class="column-mini-ctrl-btn" id="columnMiniNextBtn" title="Next Track" aria-label="Next Track">
+              <svg width="24" height="22" viewBox="0 0 24 22" fill="none">
+                <path d="M5 4L12 11L5 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M12 4L19 11L12 18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Monospace Time Display -->
+          <span class="column-mini-time-display" id="columnMiniTimeDisplay">0:00/0:00</span>
+        </div>
+
+        <!-- Bottom Full-Width Horizontal Timeline Progress Track -->
+        <div class="column-mini-progress-track" id="columnMiniProgressTrack" role="progressbar"
+          aria-label="Track Progress" tabindex="0">
+          <div class="column-mini-progress-fill" id="columnMiniProgressFill"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Hidden Folder & File Pickers -->
-  <input type="file" id="folderPickerInput" webkitdirectory directory multiple accept="audio/*,audio/mpeg,audio/mp3,audio/x-mp3,audio/x-mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/flac,audio/x-flac,audio/ogg,audio/x-m4a,audio/m4a,audio/opus,audio/webm,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.weba,.webm,.m4b,.mpga" style="display:none;" />
-  <input type="file" id="filePickerInput" multiple accept="audio/*,audio/mpeg,audio/mp3,audio/x-mp3,audio/x-mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/flac,audio/x-flac,audio/ogg,audio/x-m4a,audio/m4a,audio/opus,audio/webm,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.weba,.webm,.m4b,.mpga" style="display:none;" />
+  <input type="file" id="folderPickerInput" webkitdirectory directory multiple
+    accept="audio/*,audio/mpeg,audio/mp3,audio/x-mp3,audio/x-mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/flac,audio/x-flac,audio/ogg,audio/x-m4a,audio/m4a,audio/opus,audio/webm,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.weba,.webm,.m4b,.mpga"
+    style="display:none;" />
+  <input type="file" id="filePickerInput" multiple
+    accept="audio/*,audio/mpeg,audio/mp3,audio/x-mp3,audio/x-mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/flac,audio/x-flac,audio/ogg,audio/x-m4a,audio/m4a,audio/opus,audio/webm,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.weba,.webm,.m4b,.mpga"
+    style="display:none;" />
 
   <!-- Search Modal Overlay -->
   <div class="search-overlay" id="searchOverlay" role="dialog" aria-modal="true">
@@ -521,7 +1380,7 @@
   <div class="modal-overlay" id="settingsModal" role="dialog" aria-modal="true">
     <div class="settings-card">
       <div class="settings-header">
-        <h2 class="settings-title">Musico Settings</h2>
+        <h2 class="settings-title">Atsuko Settings</h2>
         <button class="close-modal-btn" id="closeSettingsBtn" aria-label="Close settings">✕</button>
       </div>
 
@@ -529,7 +1388,8 @@
         <span class="settings-group-label">Theme Appearance</span>
         <div class="theme-toggle-row">
           <button class="theme-toggle-btn" id="themeLightBtn" data-theme="light" title="Switch to Light Mode">
-            <svg class="theme-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="theme-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="5"></circle>
               <line x1="12" y1="1" x2="12" y2="3"></line>
               <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -543,14 +1403,15 @@
             <span>Light Mode</span>
           </button>
           <button class="theme-toggle-btn active" id="themeDarkBtn" data-theme="dark" title="Switch to Dark Mode">
-            <svg class="theme-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="theme-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
             </svg>
             <span>Dark Mode</span>
           </button>
         </div>
       </div>
-      
+
       <div class="settings-group">
         <label class="settings-group-label" for="settingsVolumeSlider">Master Audio Volume</label>
         <input type="range" id="settingsVolumeSlider" class="range-slider" min="0" max="100" value="85" />
@@ -574,6 +1435,547 @@
     </div>
   </div>
 
+  <!-- Profile & Musico Stats Modal Overlay -->
+  <div class="modal-overlay" id="profileModal" role="dialog" aria-modal="true">
+    <div class="settings-card profile-card">
+      <!-- Profile Header (Shared across both tabs) -->
+      <div class="profile-header">
+        <div class="profile-user-summary">
+          <div class="profile-avatar-wrap" id="profileAvatarWrap" title="Click to Change Profile Image">
+            <img src="assets/default-avatar.svg" alt="Profile" class="profile-main-avatar-img"
+              id="profileModalAvatarImg" />
+            <button class="profile-avatar-edit-badge" id="profileAvatarEditBadge" title="Change Profile Picture"
+              aria-label="Change Profile Picture">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="profile-name-info">
+            <div class="profile-name-row">
+              <h2 class="profile-user-title" id="profileUserNameTitle" title="Double-click to edit name">USER</h2>
+              <button class="profile-name-edit-btn" id="editUserNameBtn" title="Edit username"
+                aria-label="Edit username">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="profile-days-badge">
+              <svg class="profile-days-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span id="profileDaysLabel">Using Atsuko for 0 days</span>
+            </div>
+          </div>
+        </div>
+        <button class="close-modal-btn" id="closeProfileBtn" aria-label="Close profile">✕</button>
+      </div>
+
+      <!-- Two Tabs: Profile | Atsuko Stats -->
+      <div class="profile-tabs-bar">
+        <button class="profile-tab-btn active" id="profileTabBtn" data-tab="profile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span>Profile</span>
+        </button>
+        <button class="profile-tab-btn" id="statsTabBtn" data-tab="stats">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          <span>Atsuko Stats</span>
+        </button>
+      </div>
+
+      <!-- Hidden file input for Change Profile Image -->
+      <input type="file" id="profileImageFileInput" accept="image/*" style="display: none;" />
+
+      <!-- Tab 1: Profile Content -->
+      <div class="profile-tab-content" id="profileTabContent">
+        <div class="profile-sections-grid">
+          <!-- Left Column: Actions -->
+          <div class="profile-left-col">
+            <div class="profile-col-header">
+              <h3 class="profile-col-title">Profile</h3>
+              <p class="profile-col-desc">Manage your profile and preferences.</p>
+            </div>
+
+            <div class="profile-action-buttons-list">
+              <!-- 1. Change Profile Image -->
+              <button class="profile-action-card" id="changeProfileImageBtn">
+                <div class="action-card-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+                <div class="action-card-text">
+                  <span class="action-card-title">Change Profile Image</span>
+                  <span class="action-card-subtitle">Update your profile picture</span>
+                </div>
+                <svg class="action-card-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+
+              <!-- 2. Send Feedback -->
+              <button class="profile-action-card" id="sendFeedbackBtn">
+                <div class="action-card-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <div class="action-card-text">
+                  <span class="action-card-title">Send Feedback</span>
+                  <span class="action-card-subtitle">Help us make Atsuko better</span>
+                </div>
+                <svg class="action-card-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+
+              <!-- 3. User Manual -->
+              <button class="profile-action-card" id="userManualBtn">
+                <div class="action-card-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                  </svg>
+                </div>
+                <div class="action-card-text">
+                  <span class="action-card-title">User Manual</span>
+                  <span class="action-card-subtitle">Learn how to use Atsuko</span>
+                </div>
+                <svg class="action-card-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right Column: About You -->
+          <div class="profile-right-col">
+            <div class="profile-col-header">
+              <h3 class="profile-col-title">About You</h3>
+            </div>
+
+            <div class="about-you-list">
+              <div class="about-you-item">
+                <div class="about-you-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                </div>
+                <div class="about-you-info">
+                  <span class="about-you-label">Username</span>
+                  <span class="about-you-val" id="aboutYouUsername">USER</span>
+                </div>
+              </div>
+
+              <div class="about-you-item">
+                <div class="about-you-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                </div>
+                <div class="about-you-info">
+                  <span class="about-you-label">Joined</span>
+                  <span class="about-you-val" id="aboutYouJoined">12 Jul 2025</span>
+                </div>
+              </div>
+
+              <div class="about-you-item">
+                <div class="about-you-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18V5l12-2v13"></path>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <circle cx="18" cy="16" r="3"></circle>
+                  </svg>
+                </div>
+                <div class="about-you-info">
+                  <span class="about-you-label">Total Listening Time</span>
+                  <span class="about-you-val" id="aboutYouListeningTime">0 Hours</span>
+                </div>
+              </div>
+
+              <div class="about-you-item">
+                <div class="about-you-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <div class="about-you-info">
+                  <span class="about-you-label">Songs Played</span>
+                  <span class="about-you-val" id="aboutYouSongsPlayed">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quote Card -->
+            <div class="profile-quote-card">
+              <div class="quote-card-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                  <path
+                    d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z">
+                  </path>
+                </svg>
+              </div>
+              <div class="quote-card-text">
+                <h4 class="quote-card-title">Good Music, Better Days</h4>
+                <p class="quote-card-desc">Thanks for being a part of Atsuko. Keep listening, keep exploring. 🎵</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Atsuko Branding Footer -->
+        <div class="profile-footer-brand">
+          <div class="profile-footer-left">
+            <div class="equalizer-icon-static" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span class="profile-footer-logo-text">Atsuko</span>
+          </div>
+          <div class="profile-footer-tagline">
+            Your Music <span class="tagline-dot">•</span> Your Space <span class="tagline-dot">•</span> Offline
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Atsuko Stats Content -->
+      <div class="stats-tab-content" id="statsTabContent" style="display: none;">
+        <div class="stats-section-header">
+          <h3 class="stats-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            Atsuko Stats
+          </h3>
+          <p class="stats-section-subtitle">Your listening journey, in numbers.</p>
+        </div>
+
+        <!-- Row 1: Top 2 Hero Cards (Listening Time, Songs Played) -->
+        <div class="stats-hero-row">
+          <div class="stats-card hero-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Total Listening Time</span>
+              <span class="stats-card-value hero-value" id="statsTotalListeningTime">0 Hours</span>
+            </div>
+          </div>
+
+          <div class="stats-card hero-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"></path>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Songs Played</span>
+              <span class="stats-card-value hero-value" id="statsTotalSongsPlayed">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: 3-Column Items (Most Played Song, Favorite Artist, Favorite Album) -->
+        <div class="stats-triple-row">
+          <!-- Most Played Song -->
+          <div class="stats-card media-stat-card" id="statsMostPlayedCard">
+            <span class="stats-card-label">Most Played Song</span>
+            <div class="stats-media-content">
+              <img src="assets/M logo.png" alt="Cover" class="stats-media-thumb square" id="statsMostPlayedThumb" />
+              <div class="stats-media-text">
+                <span class="stats-media-title" id="statsMostPlayedTitle">No songs played yet</span>
+                <span class="stats-media-sub" id="statsMostPlayedArtist">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Favorite Artist -->
+          <div class="stats-card media-stat-card" id="statsFavArtistCard">
+            <span class="stats-card-label">Favorite Artist</span>
+            <div class="stats-media-content">
+              <img src="assets/M logo.png" alt="Artist" class="stats-media-thumb circle" id="statsFavArtistThumb" />
+              <div class="stats-media-text">
+                <span class="stats-media-title" id="statsFavArtistTitle">No artist data yet</span>
+                <span class="stats-media-sub" id="statsFavArtistSub">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Favorite Album -->
+          <div class="stats-card media-stat-card" id="statsFavAlbumCard">
+            <span class="stats-card-label">Favorite Album</span>
+            <div class="stats-media-content">
+              <img src="assets/M logo.png" alt="Album" class="stats-media-thumb square" id="statsFavAlbumThumb" />
+              <div class="stats-media-text">
+                <span class="stats-media-title" id="statsFavAlbumTitle">No album data yet</span>
+                <span class="stats-media-sub" id="statsFavAlbumSub">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: 2-Column Items (Favorite Genre, Favorite Language) -->
+        <div class="stats-dual-row">
+          <!-- Favorite Genre -->
+          <div class="stats-card icon-stat-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Favorite Genre</span>
+              <span class="stats-card-value" id="statsFavGenre">Melancholic</span>
+            </div>
+          </div>
+
+          <!-- Favorite Language -->
+          <div class="stats-card icon-stat-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                </path>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Favorite Language</span>
+              <span class="stats-card-value" id="statsFavLanguage">Offline Local</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: 2-Column Items (Days Using Musico, Most Active Listening Time) -->
+        <div class="stats-dual-row">
+          <!-- Days Using Musico -->
+          <div class="stats-card icon-stat-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Days Using Atsuko</span>
+              <span class="stats-card-value" id="statsDaysUsing">0 Days</span>
+            </div>
+          </div>
+
+          <!-- Most Active Listening Time -->
+          <div class="stats-card icon-stat-card">
+            <div class="stats-card-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path
+                  d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z">
+                </path>
+              </svg>
+            </div>
+            <div class="stats-card-info">
+              <span class="stats-card-label">Most Active Listening Time</span>
+              <span class="stats-card-value" id="statsMostActivePeriod">Evening</span>
+              <span class="stats-card-subtext" id="statsMostActivePeriodSub">(6 PM – 12 AM)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5: Listening Time Distribution -->
+        <div class="stats-distribution-section">
+          <h4 class="distribution-heading">Listening Time Distribution</h4>
+          <div class="distribution-cards-row">
+            <!-- Morning -->
+            <div class="dist-card">
+              <div class="dist-card-top">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="5"></circle>
+                  <line x1="12" y1="1" x2="12" y2="3"></line>
+                  <line x1="12" y1="21" x2="12" y2="23"></line>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                  <line x1="1" y1="12" x2="3" y2="12"></line>
+                  <line x1="21" y1="12" x2="23" y2="12"></line>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <span class="dist-time-name">Morning</span>
+              </div>
+              <span class="dist-pct" id="distMorningPct">0%</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" id="distMorningFill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Afternoon -->
+            <div class="dist-card">
+              <div class="dist-card-top">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2"></path>
+                  <path d="M12 20v2"></path>
+                  <path d="m4.93 4.93 1.41 1.41"></path>
+                  <path d="m17.66 17.66 1.41 1.41"></path>
+                  <path d="M2 12h2"></path>
+                  <path d="M20 12h2"></path>
+                </svg>
+                <span class="dist-time-name">Afternoon</span>
+              </div>
+              <span class="dist-pct" id="distAfternoonPct">0%</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" id="distAfternoonFill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Evening -->
+            <div class="dist-card">
+              <div class="dist-card-top">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 18a5 5 0 0 0-10 0"></path>
+                  <line x1="12" y1="2" x2="12" y2="9"></line>
+                  <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"></line>
+                  <line x1="1" y1="18" x2="3" y2="18"></line>
+                  <line x1="21" y1="18" x2="23" y2="18"></line>
+                  <line x1="18.36" y1="11.64" x2="19.78" y2="10.22"></line>
+                  <line x1="23" y1="22" x2="1" y2="22"></line>
+                </svg>
+                <span class="dist-time-name">Evening</span>
+              </div>
+              <span class="dist-pct" id="distEveningPct">0%</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" id="distEveningFill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Night -->
+            <div class="dist-card">
+              <div class="dist-card-top">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+                <span class="dist-time-name">Night</span>
+              </div>
+              <span class="dist-pct" id="distNightPct">0%</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" id="distNightFill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feedback Modal -->
+  <div class="modal-overlay" id="feedbackModal" role="dialog" aria-modal="true">
+    <div class="settings-card feedback-card">
+      <div class="settings-header">
+        <h2 class="settings-title">Send Feedback</h2>
+        <button class="close-modal-btn" id="closeFeedbackBtn" aria-label="Close feedback">✕</button>
+      </div>
+      <p class="feedback-desc">Have suggestions or found a bug? Let us know how we can make Atsuko even better.</p>
+      <textarea class="feedback-textarea" id="feedbackTextarea" placeholder="Type your feedback here..."
+        rows="5"></textarea>
+      <div class="feedback-actions">
+        <button class="feedback-cancel-btn" id="cancelFeedbackBtn">Cancel</button>
+        <button class="feedback-submit-btn" id="submitFeedbackBtn">Submit Feedback</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Manual Modal -->
+  <div class="modal-overlay" id="userManualModal" role="dialog" aria-modal="true">
+    <div class="settings-card user-manual-card">
+      <div class="settings-header">
+        <h2 class="settings-title">Atsuko User Manual</h2>
+        <button class="close-modal-btn" id="closeUserManualBtn" aria-label="Close manual">✕</button>
+      </div>
+      <div class="manual-content-scroll">
+        <div class="manual-section">
+          <h4>🎵 Offline Library</h4>
+          <p>Add folders or local audio files using the <strong>+</strong> button on the sidebar. Atsuko scans and
+            parses metadata completely offline.</p>
+        </div>
+        <div class="manual-section">
+          <h4>⌨️ Keyboard Navigation</h4>
+          <p class="manual-shortcuts-text">
+            • <strong>A / D</strong> — Switch view modes in PC view (Songs List, Lyrics, 3-Column Grid, and Up Next).<br>
+            • <strong>S</strong> — Toggle playback mode between Shuffle, Repeat On, and Repeat Off.<br>
+            • <strong>Space</strong> — Play or Pause playback.<br>
+            • <strong>N</strong> — Skip to the Next song.<br>
+            • <strong>P</strong> — Play the Previous song.<br>
+            • <strong>L</strong> — Enter Full View mode (covers the full screen displaying only the current playing song with large artwork and interactive lyrics).<br>
+            • <strong>← / →</strong> — Seek 5 seconds backward or forward.
+          </p>
+        </div>
+        <div class="manual-section">
+          <h4>🎙️ Voice Recorder</h4>
+          <p>Record notes and live audio in the Library &rarr; Recorder section. Files can be stored directly on your PC
+            disk.</p>
+        </div>
+        <div class="manual-section">
+          <h4>🎨 Themes & Sound</h4>
+          <p>Toggle between Dark and Light mode from the Settings popup. Enjoy lossless offline playback and acoustics.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Three-Dot Song Context Menu -->
   <div class="context-menu" id="songContextMenu" role="menu">
     <button class="context-item" data-action="select" role="menuitem">Select</button>
@@ -581,7 +1983,8 @@
     <button class="context-item" data-action="play-next" role="menuitem">Play Next</button>
     <button class="context-item" data-action="info" role="menuitem">Track Info</button>
     <button class="context-item delete" data-action="delete" role="menuitem">Remove from Library</button>
-    <button class="context-item remove-from-playlist" id="contextRemoveFromPlaylistBtn" data-action="remove-from-playlist" role="menuitem" style="display: none;">Remove from Playlist</button>
+    <button class="context-item remove-from-playlist" id="contextRemoveFromPlaylistBtn"
+      data-action="remove-from-playlist" role="menuitem" style="display: none;">Remove from Playlist</button>
   </div>
 
   <!-- Three-Dot Playlist Item Context Menu -->
@@ -591,6 +1994,30 @@
     <button class="context-item delete" data-action="delete-playlist" role="menuitem">Delete Playlist</button>
   </div>
 
+  <!-- Three-Dot Artist Item Context Menu -->
+  <div class="context-menu" id="artistContextMenu" role="menu">
+    <button class="context-item" data-action="play-artist" role="menuitem">Play this Artist</button>
+    <button class="context-item delete" data-action="delete-artist" role="menuitem">Delete Artist</button>
+  </div>
+
+  <!-- Three-Dot Album Item Context Menu -->
+  <div class="context-menu" id="albumContextMenu" role="menu">
+    <button class="context-item" data-action="play-album" role="menuitem">Play Album</button>
+    <button class="context-item delete" data-action="delete-album" role="menuitem">Delete Album</button>
+  </div>
+
+  <!-- Three-Dot Folder Item Context Menu -->
+  <div class="context-menu" id="folderContextMenu" role="menu">
+    <button class="context-item" data-action="play-folder" role="menuitem">Play Folder</button>
+    <button class="context-item delete" data-action="delete-folder" role="menuitem">Delete Folder</button>
+  </div>
+
+  <!-- Three-Dot Recording Item Context Menu -->
+  <div class="context-menu" id="recordingContextMenu" role="menu">
+    <button class="context-item" data-action="play-recording" role="menuitem">Play Recording</button>
+    <button class="context-item delete" data-action="delete-recording" role="menuitem">Delete Recording</button>
+  </div>
+
   <!-- Add To Playlist Modal Overlay -->
   <div class="modal-overlay" id="playlistModal" role="dialog" aria-modal="true">
     <div class="playlist-modal-card">
@@ -598,11 +2025,12 @@
         <h2 class="playlist-modal-title">Add to Playlist</h2>
         <button class="close-modal-btn" id="closePlaylistModalBtn" aria-label="Close modal">✕</button>
       </div>
-      
+
       <div class="create-playlist-row" id="createPlaylistQuickRow">
         <button class="create-playlist-btn" id="showCreatePlaylistBtn">+ Create New Playlist</button>
         <div class="create-playlist-input-box" id="createPlaylistInputBox" style="display: none;">
-          <input type="text" id="newPlaylistNameInput" class="playlist-name-input" placeholder="Playlist Name..." maxlength="40" />
+          <input type="text" id="newPlaylistNameInput" class="playlist-name-input" placeholder="Playlist Name..."
+            maxlength="40" />
           <div class="create-playlist-btns-group">
             <button class="playlist-action-btn confirm-btn" id="confirmCreatePlaylistBtn">Create</button>
             <button class="playlist-action-btn cancel-btn" id="cancelCreatePlaylistBtn">Cancel</button>
@@ -623,17 +2051,127 @@
     </div>
     <div class="multi-select-actions">
       <button class="multi-select-btn" id="multiSelectAllBtn">All</button>
-      <button class="multi-select-btn primary-btn" id="multiSelectAddBtn" title="Add to Playlist" aria-label="Add to Playlist">+</button>
-      <button class="multi-select-btn cancel-btn" id="multiSelectCancelBtn" title="Cancel" aria-label="Cancel">✕</button>
+      <button class="multi-select-btn primary-btn" id="multiSelectAddBtn" title="Add to Playlist"
+        aria-label="Add to Playlist">+</button>
+      <button class="multi-select-btn cancel-btn" id="multiSelectCancelBtn" title="Cancel"
+        aria-label="Cancel">✕</button>
     </div>
   </div>
 
   <!-- Toast Notification Message -->
   <div class="toast-message" id="toastMessage" role="status" aria-live="polite"></div>
 
-  <script src="js/id3Parser.js?v=36"></script>
-  <script src="js/fileManager.js?v=36"></script>
-  <script src="js/player.js?v=36"></script>
-  <script src="js/app.js?v=36"></script>
+  <!-- MASTER SONG FULL VIEW / IMMERSIVE PLAYER (PC ONLY) -->
+  <div id="songFullViewOverlay" class="song-full-view-overlay" style="display: none;" role="dialog" aria-modal="true"
+    aria-label="Immersive Song Player">
+    <!-- Full-bleed Cover Artwork Background -->
+    <img id="fullViewBgArtwork" class="full-view-bg-artwork" src="assets/M logo.png" alt="Song Cover Background" />
+    <div class="full-view-backdrop-vignette" aria-hidden="true"></div>
+
+    <!-- Top Navigation Bar -->
+    <div class="full-view-top-bar">
+      <!-- Top-Left Options Button -->
+      <button id="fullViewOptionsBtn" class="full-view-icon-btn full-view-options-btn" title="Song Options"
+        aria-label="Song Options">
+        <img id="fullViewOptionsIcon" src="assets/Dark Mode/DarkModeOptionsbtn.svg" alt="Options" />
+      </button>
+
+      <!-- Top-Right Exit Full View Button -->
+      <button id="fullViewExitBtn" class="full-view-icon-btn full-view-exit-btn" title="Exit Full View (L)"
+        aria-label="Exit Full View">
+        <img src="assets/LibraryItems/SongFullView.svg" alt="Exit Full View" />
+      </button>
+    </div>
+
+    <!-- Center Large Play/Pause Control (State A, C) -->
+    <div id="fullViewCenterControl" class="full-view-center-control">
+      <button id="fullViewCenterPlayPauseBtn" class="full-view-center-btn" title="Play or Pause"
+        aria-label="Play or Pause">
+        <svg class="full-view-center-play-svg" width="76" height="76" viewBox="0 0 76 76" fill="none">
+          <path
+            d="M24 16C24 13.8 26.4 12.4 28.3 13.5L62.7 33.3C64.6 34.4 64.6 37.1 62.7 38.2L28.3 58C26.4 59.1 24 57.7 24 55.5V16Z"
+            fill="white" />
+          <polygon points="23,38 52,22 46,18 23,31" fill="#0D0D11" />
+        </svg>
+        <svg class="full-view-center-pause-svg" width="76" height="76" viewBox="0 0 76 76" fill="none"
+          style="display: none;">
+          <rect x="20" y="16" width="12" height="44" rx="4" fill="white" />
+          <rect x="44" y="16" width="12" height="44" rx="4" fill="white" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Right-Side Lyric Color Toggle Control (Image 2) -->
+    <div class="full-view-lyric-toggle-wrap" id="fullViewLyricToggleWrap">
+      <button id="fullViewLyricColorToggle" class="full-view-lyric-toggle" title="Toggle Lyric Color"
+        aria-label="Toggle Lyric Color">
+        <span class="full-view-toggle-knob" id="fullViewToggleKnob"></span>
+      </button>
+    </div>
+
+    <!-- Creative Synchronized Lyrics Container (Image 2) -->
+    <div id="fullViewLyricsContainer" class="full-view-lyrics-container" style="display: none;">
+      <div id="fullViewLyricsTextLines" class="full-view-lyrics-text-lines"></div>
+    </div>
+
+    <!-- Bottom Controls Interaction Area & Bar (Image 1) -->
+    <div id="fullViewBottomControls" class="full-view-bottom-controls">
+      <!-- Left: Dedicated Full View Mini Player -->
+      <div class="full-view-mini-player-card" id="fullViewMiniPlayerCard">
+        <div class="full-view-mini-top-row">
+          <div class="full-view-mini-transport">
+            <button class="full-view-mini-btn" id="fullViewMiniPrevBtn" title="Previous Track"
+              aria-label="Previous Track">
+              <svg width="22" height="20" viewBox="0 0 24 22" fill="none">
+                <path d="M12 4L5 11L12 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M19 4L12 11L19 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="full-view-mini-btn play-pause-btn" id="fullViewMiniPlayPauseBtn" title="Play or Pause"
+              aria-label="Play or Pause">
+              <svg class="full-view-mini-play-icon" width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6.5 4.8C6.5 3.6 7.8 2.9 8.8 3.5L19.5 10.7C20.4 11.3 20.4 12.7 19.5 13.3L8.8 20.5C7.8 21.1 6.5 20.4 6.5 19.2V4.8Z"
+                  fill="currentColor" />
+              </svg>
+              <svg class="full-view-mini-pause-icon" width="22" height="22" viewBox="0 0 24 24" fill="none"
+                style="display: none;">
+                <rect x="5.5" y="4" width="4" height="16" rx="2" fill="currentColor" />
+                <rect x="14.5" y="4" width="4" height="16" rx="2" fill="currentColor" />
+              </svg>
+            </button>
+            <button class="full-view-mini-btn" id="fullViewMiniNextBtn" title="Next Track" aria-label="Next Track">
+              <svg width="22" height="20" viewBox="0 0 24 22" fill="none">
+                <path d="M5 4L12 11L5 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M12 4L19 11L12 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <span class="full-view-mini-time" id="fullViewTimeDisplay">0:00/0:00</span>
+        </div>
+        <!-- Playback Timeline Track & Scrubber Handle -->
+        <div class="full-view-progress-track" id="fullViewProgressTrack" role="progressbar" aria-label="Track Progress"
+          tabindex="0">
+          <div class="full-view-progress-fill" id="fullViewProgressFill"></div>
+          <div class="full-view-progress-handle" id="fullViewProgressHandle"></div>
+        </div>
+      </div>
+
+      <!-- Right: Up Next Strip -->
+      <div class="full-view-up-next-strip" id="fullViewUpNextStrip" role="list">
+        <!-- Dynamically rendered: 1st next song = Large square cover; later songs = smaller square covers -->
+      </div>
+    </div>
+  </div>
+
+  <script src="js/id3Parser.js?v=100"></script>
+  <script src="js/fileManager.js?v=100"></script>
+  <script src="js/player.js?v=100"></script>
+  <script src="js/app.js?v=100"></script>
 </body>
+
 </html>
