@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atsuko KWS Development Diagnostics</title>
+  <style>
+    :root {
+      --bg: #0D0D10;
+      --card-bg: #16161A;
+      --border: rgba(255, 255, 255, 0.08);
+      --accent: #30D158;
+      --accent-warn: #FFD60A;
+      --accent-err: #FF453A;
+      --text: #F5F5F7;
+      --text-dim: #8E8E93;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(48, 209, 88, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(48, 209, 88, 0.3);
+    }
+    .badge.off {
+      background: rgba(255, 69, 58, 0.15);
+      color: var(--accent-err);
+      border-color: rgba(255, 69, 58, 0.3);
+    }
+    .badge.listening {
+      background: rgba(255, 214, 10, 0.15);
+      color: var(--accent-warn);
+      border-color: rgba(255, 214, 10, 0.3);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .card-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+    .metric-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #FFF;
+      margin-bottom: 4px;
+    }
+    .metric-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .bar-wrap {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.08s ease;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: rgba(255, 255, 255, 0.1);
+      color: #FFF;
+      border: 1px solid var(--border);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    button:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    button.primary {
+      background: var(--accent);
+      color: #000;
+      font-weight: 600;
+      border: none;
+    }
+    button.primary:hover {
+      background: #34E060;
+    }
+    canvas {
+      width: 100%;
+      height: 120px;
+      background: #000;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+    .terminal {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      font-family: "SF Mono", Menlo, Consolas, Monaco, monospace;
+      font-size: 12px;
+      color: #30D158;
+      height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .terminal p {
+      margin-bottom: 4px;
+    }
+    .terminal p.warn { color: var(--accent-warn); }
+    .terminal p.err { color: var(--accent-err); }
+    .terminal p.info { color: #64D2FF; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Atsuko Offline KWS Diagnostics</h1>
+      <p style="color: var(--text-dim); font-size: 13px; margin-top: 4px;">
+        100% On-Device DSP, Mel Filterbanks & Continuous Dynamic Time Warping (CDTW)
+      </p>
+    </div>
+    <div id="statusBadge" class="badge off">ENGINE STOPPED</div>
+  </header>
+
+  <div class="btn-group">
+    <button id="toggleBtn" class="primary">Start Continuous KWS</button>
+    <button id="testSample1Btn">Test Audio Sample 1 (Atsuko / Asuko)</button>
+    <button id="testSample2Btn">Test Audio Sample 2 (Hey Atsuko / Asuko)</button>
+    <button id="clearLogBtn">Clear Log</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Live Microphone Input</div>
+      <div id="micDb" class="metric-value">-100 dB</div>
+      <div id="vadStatus" class="metric-sub">Voice: SILENCE</div>
+      <div class="bar-wrap">
+        <div id="micBar" class="bar-fill"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Last Spotted Keyword</div>
+      <div id="lastKeyword" class="metric-value">—</div>
+      <div id="lastConfidence" class="metric-sub">Confidence: 0%</div>
+      <div class="bar-wrap">
+        <div id="confBar" class="bar-fill"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Detection Latency</div>
+      <div id="latencyVal" class="metric-value">0 ms</div>
+      <div id="totalDetections" class="metric-sub">Total Detections: 0 | Rejections: 0</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">KWS Engine Health</div>
+      <div id="framesProcessed" class="metric-value">0</div>
+      <div class="metric-sub">Frames Processed (10ms step, 16kHz)</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 24px;">
+    <div class="card-title">Live Audio Waveform & Spectral Activity</div>
+    <canvas id="waveformCanvas" width="800" height="120"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Real-Time Event Stream</div>
+    <div id="logTerminal" class="terminal"></div>
+  </div>
+
+  <script src="js/kwsEngine.js"></script>
+  <script>
+    const logElem = document.getElementById('logTerminal');
+    const statusBadge = document.getElementById('statusBadge');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const micDbElem = document.getElementById('micDb');
+    const micBarElem = document.getElementById('micBar');
+    const vadStatusElem = document.getElementById('vadStatus');
+    const lastKeywordElem = document.getElementById('lastKeyword');
+    const lastConfElem = document.getElementById('lastConfidence');
+    const confBarElem = document.getElementById('confBar');
+    const latencyElem = document.getElementById('latencyVal');
+    const totalDetectionsElem = document.getElementById('totalDetections');
+    const framesElem = document.getElementById('framesProcessed');
+    const canvas = document.getElementById('waveformCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function log(msg, type = 'log') {
+      const p = document.createElement('p');
+      const time = new Date().toLocaleTimeString();
+      p.textContent = `[${time}] ${msg}`;
+      if (type === 'warn') p.className = 'warn';
+      if (type === 'err') p.className = 'err';
+      if (type === 'info') p.className = 'info';
+      logElem.appendChild(p);
+      logElem.scrollTop = logElem.scrollHeight;
+    }
+
+    // Connect KWS Wake listener
+    AtsukoKWS.onWakeWord((event) => {
+      log(`⭐ WAKE WORD DETECTED: "${event.keyword}" (Confidence: ${(event.confidence * 100).toFixed(1)}%, Latency: ${event.durationMs}ms)`, 'info');
+      lastKeywordElem.textContent = event.keyword;
+      lastConfElem.textContent = `Confidence: ${(event.confidence * 100).toFixed(1)}%`;
+      confBarElem.style.width = `${Math.round(event.confidence * 100)}%`;
+      latencyElem.textContent = `${event.durationMs} ms`;
+    });
+
+    toggleBtn.addEventListener('click', async () => {
+      if (!AtsukoKWS.isListening()) {
+        log('Starting continuous KWS engine...', 'info');
+        const ok = await AtsukoKWS.start({ forceMic: true });
+        if (ok) {
+          toggleBtn.textContent = 'Stop KWS Engine';
+          toggleBtn.classList.remove('primary');
+          statusBadge.textContent = 'LISTENING FOR "ATSUKO"';
+          statusBadge.className = 'badge listening';
+          log('KWS Engine active. Say "Atsuko", "Asuko", "Hey Atsuko", or "Okay Atsuko" into your microphone.');
+        } else {
+          log('Microphone access denied or audio initialization failed.', 'err');
+        }
+      } else {
+        AtsukoKWS.stop();
+        toggleBtn.textContent = 'Start Continuous KWS';
+        toggleBtn.classList.add('primary');
+        statusBadge.textContent = 'ENGINE STOPPED';
+        statusBadge.className = 'badge off';
+        log('KWS Engine stopped.');
+      }
+    });
+
+    // Test Audio Sample 1
+    document.getElementById('testSample1Btn').addEventListener('click', async () => {
+      log('Loading assets/atsuko-wake-sample.mp3 for acoustic offline testing...', 'info');
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioCtx();
+        const resp = await fetch('assets/atsuko-wake-sample.mp3');
+        const arrayBuf = await resp.arrayBuffer();
+        const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+        log(`Decoded sample: ${audioBuf.duration.toFixed(2)}s. Running KWS test...`);
+        const results = await AtsukoKWS.testAudioBuffer(audioBuf);
+        if (results.length > 0) {
+          log(`✅ SUCCESS! Spotted ${results.length} wake occurrence(s):`, 'info');
+          results.forEach(r => log(`   → [${r.timestampSec}s] "${r.keyword}" (${(r.confidence * 100).toFixed(1)}%)`));
+        } else {
+          log('No wake words spotted in sample 1. Check template thresholds.', 'warn');
+        }
+      } catch (err) {
+        log('Sample 1 test error: ' + err.message, 'err');
+      }
+    });
+
+    // Test Audio Sample 2
+    document.getElementById('testSample2Btn').addEventListener('click', async () => {
+      log('Loading assets/atsuko-wake-sample2.mp3 for acoustic offline testing...', 'info');
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioCtx();
+        const resp = await fetch('assets/atsuko-wake-sample2.mp3');
+        const arrayBuf = await resp.arrayBuffer();
+        const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+        log(`Decoded sample 2: ${audioBuf.duration.toFixed(2)}s. Running KWS test...`);
+        const results = await AtsukoKWS.testAudioBuffer(audioBuf);
+        if (results.length > 0) {
+          log(`✅ SUCCESS! Spotted ${results.length} wake occurrence(s):`, 'info');
+          results.forEach(r => log(`   → [${r.timestampSec}s] "${r.keyword}" (${(r.confidence * 100).toFixed(1)}%)`));
+        } else {
+          log('No wake words spotted in sample 2.', 'warn');
+        }
+      } catch (err) {
+        log('Sample 2 test error: ' + err.message, 'err');
+      }
+    });
+
+    document.getElementById('clearLogBtn').addEventListener('click', () => {
+      logElem.innerHTML = '';
+    });
+
+    // Periodic UI Refresh loop (30 FPS)
+    setInterval(() => {
+      const diag = AtsukoKWS.getDiagnostics();
+      if (!diag.isRunning) return;
+
+      micDbElem.textContent = `${diag.micLevelDbfs} dB`;
+      const normalizedLevel = Math.max(0, Math.min(100, (diag.micLevelDbfs + 60) * 1.66));
+      micBarElem.style.width = `${normalizedLevel}%`;
+
+      vadStatusElem.textContent = diag.isVoiceDetected ? 'Voice: SPEECH DETECTED' : 'Voice: SILENCE';
+      vadStatusElem.style.color = diag.isVoiceDetected ? '#30D158' : '#8E8E93';
+
+      framesElem.textContent = diag.audioFramesProcessed.toLocaleString();
+      totalDetectionsElem.textContent = `Total Detections: ${diag.totalDetections} | Rejections: ${diag.totalRejections}`;
+
+      if (diag.lastConfidence > 0) {
+        confBarElem.style.width = `${Math.round(diag.lastConfidence * 100)}%`;
+      }
+
+      // Draw audio oscilloscope
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = diag.isVoiceDetected ? '#30D158' : '#333';
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / (diag.recentConfidenceHistory.length || 1);
+      let x = 0;
+      for (let i = 0; i < diag.recentConfidenceHistory.length; i++) {
+        const v = diag.recentConfidenceHistory[i];
+        const y = canvas.height - v * (canvas.height - 10) - 5;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.stroke();
+    }, 50);
+
+    log('Diagnostics loaded. Ready for offline testing.', 'info');
+  </script>
+</body>
+</html>

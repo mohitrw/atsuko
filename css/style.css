@@ -10794,3 +10794,502 @@ body[data-theme="light"] .home-folder-icon-svg {
     display: none !important;
   }
 }
+
+/* ==========================================================================
+   ATSUKO VOICE ASSISTANT BOTTOM PANEL (PC / WINDOWS APP ONLY)
+   Exact Match to Reference Screenshot (Left Greeting & Question, Command Box, 4-Bar Audio Reactive Visualizer)
+   ========================================================================== */
+.voice-assistant-panel {
+  position: fixed;
+  bottom: 0;
+  left: 82px;
+  right: 0;
+  height: 270px;
+  background-color: #0E0E11;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.7);
+  z-index: 95;
+  padding: 34px 56px 32px 56px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  transform: translateY(105%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.32s ease;
+}
+
+.voice-assistant-panel.visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.voice-assistant-close-btn {
+  position: absolute;
+  top: 22px;
+  right: 28px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.voice-assistant-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.08);
+}
+
+.voice-assistant-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* Left Section: Greeting, Question & Command Box */
+.voice-assistant-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.voice-assistant-greeting {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: -0.4px;
+  margin: 0 0 6px 0;
+  line-height: 1.2;
+}
+
+.voice-assistant-question {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 400;
+  color: #E2E2E6;
+  letter-spacing: -0.3px;
+  margin: 0 0 24px 0;
+  line-height: 1.2;
+}
+
+.voice-assistant-command-wrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.voice-assistant-command-box {
+  background-color: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0 20px;
+  width: 420px;
+  max-width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.voice-assistant-command-box.command-success {
+  border-color: rgba(255, 255, 255, 0.38);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.12);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.voice-assistant-command-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  color: #8E8E93;
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.voice-assistant-command-input::placeholder {
+  color: #55555A;
+}
+
+/* Right Section: 4-Bar Audio Reactive Visualizer */
+.voice-assistant-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.voice-bars-container {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 130px;
+  margin-right: 50px;
+}
+
+.voice-bar {
+  width: 3.5px;
+  background-color: #FFFFFF;
+  border-radius: 3px;
+  display: inline-block;
+  transition: height 0.08s ease-out;
+}
+
+#voiceBar1 { height: 75px; }
+#voiceBar2 { height: 55px; }
+#voiceBar3 { height: 65px; }
+#voiceBar4 { height: 95px; }
+
+/* Voice Setup Permission Modal */
+.voice-setup-card {
+  max-width: 440px;
+  text-align: center;
+}
+
+.voice-setup-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.voice-setup-icon-wrap {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background: #242428;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  margin-bottom: 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.voice-setup-heading {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 600;
+  color: #FFFFFF;
+  margin: 0 0 8px 0;
+}
+
+.voice-setup-desc {
+  font-family: var(--font-heading);
+  font-size: 13.5px;
+  color: #8E8E93;
+  margin: 0 0 20px 0;
+  line-height: 1.45;
+}
+
+.voice-setup-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 24px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+}
+
+.voice-setup-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  color: #D1D1D6;
+  line-height: 1.4;
+}
+
+.voice-setup-feature-item .feature-bullet {
+  color: #FFFFFF;
+  font-size: 14px;
+}
+
+.voice-setup-actions {
+  width: 100%;
+}
+
+.voice-setup-enable-btn {
+  width: 100%;
+  background: #FFFFFF;
+  color: #000000;
+  border: none;
+  border-radius: 12px;
+  padding: 13px 0;
+  font-family: var(--font-heading);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.voice-setup-enable-btn:hover {
+  background: #E5E5EA;
+  transform: scale(1.01);
+}
+
+/* Settings iOS-style Switch Toggle */
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #2C2C2E;
+  transition: 0.25s ease;
+  border-radius: 26px;
+}
+
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #FFFFFF;
+  transition: 0.25s ease;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.switch-toggle input:checked + .switch-slider {
+  background-color: #30D158;
+}
+
+.switch-toggle input:checked + .switch-slider:before {
+  transform: translateX(22px);
+}
+
+/* Voice Button icon in non-selected mode: Crisp White like Settings & Search */
+#voiceAssistantBtn svg,
+#homeVoiceAssistantBtn svg {
+  stroke: #FFFFFF;
+  color: #FFFFFF;
+  transition: stroke 0.2s ease;
+}
+
+body[data-theme="light"] #voiceAssistantBtn svg,
+body[data-theme="light"] #homeVoiceAssistantBtn svg {
+  stroke: #000000;
+  color: #000000;
+}
+
+/* Active Voice Button glowing state */
+#voiceAssistantBtn.active,
+#homeVoiceAssistantBtn.active {
+  background-color: #FFFFFF;
+  color: #000000;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
+}
+
+#voiceAssistantBtn.active svg,
+#homeVoiceAssistantBtn.active svg {
+  stroke: #000000;
+  color: #000000;
+}
+
+body[data-theme="light"] #voiceAssistantBtn.active,
+body[data-theme="light"] #homeVoiceAssistantBtn.active {
+  background-color: #000000;
+  color: #FFFFFF;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.35);
+}
+
+body[data-theme="light"] #voiceAssistantBtn.active svg,
+body[data-theme="light"] #homeVoiceAssistantBtn.active svg {
+  stroke: #FFFFFF;
+  color: #FFFFFF;
+}
+
+/* Background Wake-Word Listening state (green indicator dot completely removed) */
+#voiceAssistantBtn.listening,
+#homeVoiceAssistantBtn.listening {
+  position: relative;
+}
+
+/* Light Mode Overrides for Voice Assistant Elements */
+body[data-theme="light"] .voice-setup-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E5E5EA;
+  color: #000000;
+}
+
+body[data-theme="light"] .voice-setup-icon-wrap {
+  background: #F2F2F7;
+  color: #000000;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+}
+
+body[data-theme="light"] .voice-setup-heading {
+  color: #000000;
+}
+
+body[data-theme="light"] .voice-setup-features {
+  background: #F8F8FA;
+  border: 1px solid #E5E5EA;
+  color: #333336;
+}
+
+body[data-theme="light"] .voice-setup-feature-item .feature-bullet {
+  color: #000000;
+}
+
+body[data-theme="light"] .voice-setup-enable-btn {
+  background: #000000;
+  color: #FFFFFF;
+}
+
+body[data-theme="light"] .voice-setup-enable-btn:hover {
+  background: #222226;
+}
+
+/* ==========================================================================
+   Atsuko KWS Development Diagnostics HUD
+   ========================================================================== */
+.atsuko-dev-hud {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  width: 320px;
+  background: rgba(18, 18, 22, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  font-size: 11px;
+  color: #E5E5EA;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: auto;
+}
+
+.atsuko-dev-hud.hidden {
+  transform: translateY(-20px) scale(0.95);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dev-hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dev-hud-title {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  color: #30D158;
+}
+
+.dev-hud-close-btn {
+  background: transparent;
+  border: none;
+  color: #8E8E93;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dev-hud-close-btn:hover {
+  color: #FFF;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dev-hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hud-label {
+  color: #8E8E93;
+  font-weight: 500;
+}
+
+.hud-value {
+  color: #FFF;
+  font-weight: 600;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}
+
+.hud-value.active {
+  color: #30D158;
+}
+
+.hud-value.warn {
+  color: #FFD60A;
+}
+
+.hud-value.err {
+  color: #FF453A;
+}
+
+.hud-level-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 4px 0 8px 0;
+}
+
+.hud-level-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #30D158;
+  border-radius: 3px;
+  transition: width 0.06s ease;
+}
+
+.hud-hint {
+  font-size: 10px;
+  color: #636366;
+  text-align: center;
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+}
+

@@ -1,11 +1,12 @@
 /**
- * Atsuko - PWA Offline Service Worker (v100)
+ * Atsuko - PWA Offline Service Worker (v125)
  */
 
-const CACHE_NAME = 'atsuko-cache-v100';
+const CACHE_NAME = 'atsuko-cache-v125';
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './diag.html',
   './manifest.json',
   './favicon.ico',
   './css/style.css',
@@ -13,6 +14,10 @@ const STATIC_ASSETS = [
   './js/player.js',
   './js/fileManager.js',
   './js/id3Parser.js',
+  './js/kwsEngine.js',
+  './js/voiceAssistant.js',
+  './assets/atsuko-wake-sample.mp3',
+  './assets/atsuko-wake-sample2.mp3',
   './assets/atsuko.svg',
   './assets/atsuko-no-cover-image.svg',
   './assets/atsuko-app-icon.svg',

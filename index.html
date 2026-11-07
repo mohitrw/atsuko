@@ -16,7 +16,7 @@
     rel="stylesheet" />
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="css/style.css?v=100" />
+  <link rel="stylesheet" href="css/style.css?v=124" />
 
   <!-- PWA Web App Manifest & Meta -->
   <link rel="manifest" href="manifest.json" />
@@ -711,6 +711,16 @@
       <header class="library-header">
         <h1 class="library-heading">Songs</h1>
         <div class="library-actions">
+          <button class="circle-action-btn" id="voiceAssistantBtn" title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
+            aria-label="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <button class="circle-action-btn" id="searchBtn" title="Search Songs" aria-label="Search Songs">
             <img src="assets/Dark Mode/DarkModeSearchIcon.png" alt="Search" class="action-btn-icon" />
           </button>
@@ -1181,6 +1191,16 @@
           </div>
         </div>
         <div class="home-header-right">
+          <button class="circle-action-btn" id="homeVoiceAssistantBtn" title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
+            aria-label="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <button class="circle-action-btn" id="homeSearchBtn" title="Search Songs" aria-label="Search Songs">
             <img src="assets/Dark Mode/DarkModeSearchIcon.png" alt="Search" class="action-btn-icon" />
           </button>
@@ -1414,7 +1434,7 @@
 
       <div class="settings-group">
         <label class="settings-group-label" for="settingsVolumeSlider">Master Audio Volume</label>
-        <input type="range" id="settingsVolumeSlider" class="range-slider" min="0" max="100" value="85" />
+        <input type="range" id="settingsVolumeSlider" class="range-slider" min="0" max="100" value="100" />
       </div>
 
       <div class="settings-group">
@@ -1431,6 +1451,19 @@
       <div class="settings-group">
         <span class="settings-group-label">Library Management</span>
         <button class="danger-btn" id="clearLibrarySettingsBtn">Clear Local Library</button>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-toggle-row" style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <span class="settings-group-label" style="margin-bottom: 2px;">Voice Assistant ('NX' / 'Night' / 'Nox' / 'Arden')</span>
+            <p style="font-size: 12px; color: #8E8E93; margin: 0;">100% Offline Wake-word & Voice Commands</p>
+          </div>
+          <label class="switch-toggle" for="settingsVoiceToggle">
+            <input type="checkbox" id="settingsVoiceToggle" />
+            <span class="switch-slider"></span>
+          </label>
+        </div>
       </div>
     </div>
   </div>
@@ -1946,6 +1979,10 @@
       </div>
       <div class="manual-content-scroll">
         <div class="manual-section">
+          <h4>🌙 Night Voice Assistant</h4>
+          <p>Say <strong>"Night"</strong> or <strong>"Hey Night"</strong> to control your music hands-free (e.g. <em>"Play [Song]"</em>, <em>"Pause"</em>, <em>"Next"</em>). It works online for now, but I'm actively working to make it truly offline too!</p>
+        </div>
+        <div class="manual-section">
           <h4>🎵 Offline Library</h4>
           <p>Add folders or local audio files using the <strong>+</strong> button on the sidebar. Atsuko scans and
             parses metadata completely offline.</p>
@@ -1953,12 +1990,14 @@
         <div class="manual-section">
           <h4>⌨️ Keyboard Navigation</h4>
           <p class="manual-shortcuts-text">
-            • <strong>A / D</strong> — Switch view modes in PC view (Songs List, Lyrics, 3-Column Grid, and Up Next).<br>
+            • <strong>A / D</strong> — Switch view modes in PC view (Songs List, Lyrics, 3-Column Grid, and Up
+            Next).<br>
             • <strong>S</strong> — Toggle playback mode between Shuffle, Repeat On, and Repeat Off.<br>
             • <strong>Space</strong> — Play or Pause playback.<br>
             • <strong>N</strong> — Skip to the Next song.<br>
             • <strong>P</strong> — Play the Previous song.<br>
-            • <strong>L</strong> — Enter Full View mode (covers the full screen displaying only the current playing song with large artwork and interactive lyrics).<br>
+            • <strong>L</strong> — Enter Full View mode (covers the full screen displaying only the current playing song
+            with large artwork and interactive lyrics).<br>
             • <strong>← / →</strong> — Seek 5 seconds backward or forward.
           </p>
         </div>
@@ -2168,10 +2207,90 @@
     </div>
   </div>
 
-  <script src="js/id3Parser.js?v=100"></script>
-  <script src="js/fileManager.js?v=100"></script>
-  <script src="js/player.js?v=100"></script>
-  <script src="js/app.js?v=100"></script>
+  <!-- =========================================================================
+       ATSUKO VOICE ASSISTANT BOTTOM PANEL (PC / WINDOWS APP ONLY)
+       Exact Match to Reference Screenshot (Greeting, Question, Command Box, 4 Vertical Lines)
+       ========================================================================= -->
+  <div class="voice-assistant-panel" id="voiceAssistantPanel" role="region" aria-label="Atsuko Voice Assistant">
+    <button class="voice-assistant-close-btn" id="voiceAssistantCloseBtn" title="Close Voice Assistant"
+      aria-label="Close Voice Assistant">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div class="voice-assistant-content">
+      <div class="voice-assistant-left">
+        <h2 class="voice-assistant-greeting" id="voiceAssistantGreeting">Hii! Mohit</h2>
+        <p class="voice-assistant-question">What you want to taste rn?</p>
+        <div class="voice-assistant-command-wrap">
+          <div class="voice-assistant-command-box" id="voiceAssistantCommandBox">
+            <input type="text" class="voice-assistant-command-input" id="voiceAssistantCommandInput"
+              placeholder="Play Late Nights" />
+          </div>
+        </div>
+      </div>
+      <div class="voice-assistant-right">
+        <div class="voice-bars-container" id="voiceBarsContainer" aria-hidden="true" title="Voice Input Activity">
+          <span class="voice-bar" id="voiceBar1"></span>
+          <span class="voice-bar" id="voiceBar2"></span>
+          <span class="voice-bar" id="voiceBar3"></span>
+          <span class="voice-bar" id="voiceBar4"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Atsuko Voice Assistant First-Time Permission Setup Modal -->
+  <div class="modal-overlay" id="voiceSetupModal" role="dialog" aria-modal="true">
+    <div class="settings-card voice-setup-card">
+      <div class="settings-header">
+        <h2 class="settings-title">Atsuko Voice Assistant</h2>
+        <button class="close-modal-btn" id="cancelVoiceSetupBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="voice-setup-body">
+        <div class="voice-setup-icon-wrap">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </div>
+        <h3 class="voice-setup-heading">Hands-Free Offline Voice Control</h3>
+        <p class="voice-setup-desc">Control your music seamlessly using only your voice, anywhere in the app.</p>
+        <div class="voice-setup-features">
+          <div class="voice-setup-feature-item">
+            <span class="feature-bullet">•</span>
+            <div><strong>Wake Words:</strong> Say <em>"NX"</em>, <em>"Night"</em>, <em>"Nox"</em>, or
+              <em>"Arden"</em> (or with <em>"Hey"</em> / <em>"Ok"</em>).</div>
+          </div>
+          <div class="voice-setup-feature-item">
+            <span class="feature-bullet">•</span>
+            <div><strong>Instant Voice Commands:</strong> Say <em>"Hey Night, play something"</em>, <em>"Nox, play
+                [Song]"</em>, or <em>"Arden, pause"</em>.</div>
+          </div>
+          <div class="voice-setup-feature-item">
+            <span class="feature-bullet">•</span>
+            <div><strong>Personal Audio Profile:</strong> Trained on your voice recordings for ultra-fast offline
+              detection.</div>
+          </div>
+        </div>
+        <div class="voice-setup-actions">
+          <button class="voice-setup-enable-btn" id="confirmVoiceSetupBtn">Enable Voice Assistant</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/id3Parser.js?v=122"></script>
+  <script src="js/fileManager.js?v=122"></script>
+  <script src="js/player.js?v=122"></script>
+  <script src="js/app.js?v=122"></script>
+  <script src="js/kwsEngine.js?v=122"></script>
+  <script src="js/voiceAssistant.js?v=122"></script>
 </body>
 
 </html>

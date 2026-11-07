@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head><title>SpeechRec Test</title></head>
+<body>
+<div id="log"></div>
+<script>
+function log(msg) {
+  console.log(msg);
+  document.getElementById('log').innerHTML += msg + '<br>';
+}
+
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRec) {
+  log("No SpeechRec");
+} else {
+  const rec = new SpeechRec();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onstart = () => log("onstart");
+  rec.onaudiostart = () => log("onaudiostart");
+  rec.onspeechstart = () => log("onspeechstart");
+  rec.onspeechend = () => log("onspeechend");
+  rec.onaudioend = () => log("onaudioend");
+  rec.onerror = (e) => log("onerror: " + e.error);
+  rec.onend = () => log("onend");
+  try {
+    rec.start();
+    log("start called");
+  } catch (e) {
+    log("start exception: " + e.message);
+  }
+}
+</script>
+</body>
+</html>
+

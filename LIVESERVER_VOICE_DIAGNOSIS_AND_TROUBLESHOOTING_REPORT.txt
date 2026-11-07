@@ -1,0 +1,228 @@
+================================================================================
+ATSUKO / MUSICO: LIVE SERVER VOICE INVESTIGATION & DIAGNOSIS REPORT
+================================================================================
+Report Name: LIVESERVER_VOICE_DIAGNOSIS_AND_TROUBLESHOOTING_REPORT.txt
+Date: 2026-11-07
+Status: COMPLETE INVESTIGATION REPORT (0 CODE FILES MODIFIED)
+Subject: Why Voice Activation Worked Last Night on Live Server, but Fails or
+         Stops Listening Today, and Why the Problem Occurs Even on Live Server.
+Constraint Respected: "do not change anything tin the code!!" (NO CODE MODIFIED)
+================================================================================
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY & USER'S CORE QUESTION ANSWERED
+--------------------------------------------------------------------------------
+
+Your Question:
+"Last night when I tried it, it was working great in Live Server mode... but now
+ it's not working. The command worked 'Night'... I'm on the Live Server now,
+ then why is the problem still coming?"
+
+Here is the exact technical diagnosis:
+
+When you tested last night:
+  1. The browser tab was already actively open and clicked by you.
+  2. The microphone had an active, warm WASAPI hardware handle.
+  3. The Service Worker was in an active session.
+
+When you returned this morning and reopened Live Server:
+  Even though you are on Live Server (http://127.0.0.1), 4 SPECIFIC BROWSER
+  AND HARDWARE STATE CHANGES occurred between your session last night and your
+  session today.
+
+Most importantly:
+When you notice "Night" triggered (the assistant opened / ducked music), but then
+the subsequent song or command (e.g., "Play Blinding Lights", "Pause") was not
+heard or executed, this points to a specific internal mechanism:
+THE WAKE WORD DETECTOR FIRED, BUT CHROME'S COMMAND TRANSCRIBER WAS BLOCKED.
+
+Below is the complete breakdown of the 4 exact reasons this happens.
+
+
+--------------------------------------------------------------------------------
+2. THE 4 REASONS WHY THE BUG APPEARS EVEN ON LIVE SERVER
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+CAUSE 1: WASAPI MICROPHONE DEVICE CONTENTION (THE DUAL-ENGINE CONFLICT)
+--------------------------------------------------------------------------------
+In the latest build, the voice system has two layers running:
+  Layer 1: Offline DSP Keyword Spotter (AtsukoKWS in js/kwsEngine.js)
+           Uses: navigator.mediaDevices.getUserMedia() via Web Audio API.
+  Layer 2: Cloud Speech Recognition (SpeechRecognition in js/voiceAssistant.js)
+           Uses: Chrome's native webkitSpeechRecognition to transcribe English words.
+
+WHAT HAPPENS ON A FRESH MORNING LAUNCH ON WINDOWS:
+1. When the page loads, Layer 1 (getUserMedia) grabs the Windows microphone
+   device through Windows Audio Session API (WASAPI) with hardware constraints:
+   { echoCancellation: true, noiseSuppression: true, autoGainControl: true }.
+2. At the exact same time (350ms), Layer 2 (webkitSpeechRecognition) attempts
+   to acquire the exact same microphone device to stream audio to Google's speech servers.
+3. On Windows, when two independent browser subsystems attempt to hook into the
+   same microphone hardware simultaneously:
+     - The first stream (getUserMedia) locks the hardware capture pipe.
+     - The second stream (SpeechRecognition) either fails with "audio-capture" error
+       OR connects with a muted/silent audio feed (0 amplitude).
+4. THE RESULT:
+   - Layer 1 (KWS) or initial transcript hears "Night" and opens the assistant.
+   - BUT Layer 2 (SpeechRecognition) cannot capture your voice for the command!
+   - You speak the song name ("Play Blinding Lights"), but Chrome sends silence
+     to Google servers.
+   - The 6.5-second timer runs out, the assistant says "I didn't catch that",
+     restores the volume, and closes!
+
+
+--------------------------------------------------------------------------------
+CAUSE 2: CHROME'S AUTOPLAY POLICY & "SUSPENDED" AudioContext STATE
+--------------------------------------------------------------------------------
+Chrome enforces a strict security policy called the "Autoplay / User Activation Policy":
+  - When you were using the app last night, you had already clicked on buttons,
+    songs, and sliders. The tab was "unlocked" (navigator.userActivation.hasBeenActive = true).
+  - This morning, when you launched Live Server and opened a FRESH browser tab:
+    The tab is initially "LOCKED".
+  - In modern Chromium:
+    new AudioContext() starts in state: "suspended"!
+    Until you physically click anywhere on the webpage, Chrome REFUSES to allow
+    the Web Audio engine to process incoming microphone samples.
+  - If you say "Night" immediately upon opening the page before clicking anywhere:
+    The AudioContext is suspended, so the processor node (onaudioprocess) is frozen.
+    The microphone is literally sleeping until the first user click.
+
+
+--------------------------------------------------------------------------------
+CAUSE 3: THE SERVICE WORKER CACHE TRAP (sw.js "ignoreSearch: true")
+--------------------------------------------------------------------------------
+In your Service Worker (sw.js, Line 110):
+  caches.match(e.request, { ignoreSearch: true })
+
+Notice the setting: { ignoreSearch: true }!
+Why this matters:
+1. In index.html, we update script versions using query parameters:
+   <script src="js/voiceAssistant.js?v=122"></script>
+2. BUT because sw.js has "ignoreSearch: true", Chrome IGNORES the "?v=122"!
+   It looks into the browser's disk cache for "js/voiceAssistant.js" without the query.
+3. If Chrome has a stale version cached from two days ago (which had the syntax
+   error or the 22-second idle killer interval):
+   Chrome serves the STALE OLD SCRIPT to your page instead of the new code!
+4. The Service Worker uses a "Cache-First / Stale-While-Revalidate" strategy:
+   It serves the old broken script FIRST, and only downloads the new script in
+   the background for the NEXT visit!
+5. This is why it can work during testing, and then suddenly revert to an old
+   broken behavior after restarting the browser.
+
+
+--------------------------------------------------------------------------------
+CAUSE 4: LIVE SERVER DYNAMIC PORT SHIFTING (http://127.0.0.1:5500 vs :5501)
+--------------------------------------------------------------------------------
+VS Code's "Live Server" extension has an automatic port-fallback behavior:
+1. If port 5500 was left open by an orphaned background process overnight,
+   VS Code silently launches Live Server on port 5501 (or 5502).
+2. Look at the address bar in Chrome right now:
+   Is it: http://127.0.0.1:5500/
+   Or is it: http://127.0.0.1:5501/ (or 5502)?
+3. WHY THIS BREAKS VOICE IN CHROME:
+   In Chrome's security model, permissions are strictly bound to:
+     [Protocol] + [Host] + [PORT]
+   - If you granted microphone permission on port 5500 yesterday:
+     chrome://settings/content/microphone -> http://127.0.0.1:5500 (ALLOWED).
+   - If Live Server opened on port 5501 today:
+     Chrome considers http://127.0.0.1:5501 to be a COMPLETELY NEW UNTRUSTED WEBSITE!
+   - Chrome blocks the microphone until you click the address bar lock icon
+     and explicitly allow microphone on port 5501.
+
+
+--------------------------------------------------------------------------------
+3. COMPARISON: WHY IT WORKED LAST NIGHT VS. WHY IT STALLED TODAY
+--------------------------------------------------------------------------------
+
++-------------------------------------+-------------------+---------------------+
+| FACTOR                              | LAST NIGHT        | TODAY (FRESH TAB)   |
++-------------------------------------+-------------------+---------------------+
+| 1. User Gesture State               | Active & Clicked  | Suspended (No click)|
++-------------------------------------+-------------------+---------------------+
+| 2. AudioContext Pipeline            | "running"         | "suspended"         |
++-------------------------------------+-------------------+---------------------+
+| 3. WASAPI Device Contention         | Shared Warm Pipe  | Cold Device Race    |
++-------------------------------------+-------------------+---------------------+
+| 4. Service Worker Cache             | In-Memory Cache   | Cold Disk Read      |
++-------------------------------------+-------------------+---------------------+
+| 5. Live Server Port                 | Matched Port      | Possible Port Shift |
++-------------------------------------+-------------------+---------------------+
+
+
+--------------------------------------------------------------------------------
+4. HOW YOU CAN PROVE THIS RIGHT NOW (30-SECOND DEV VERIFICATION)
+--------------------------------------------------------------------------------
+
+You can verify the exact cause inside your browser right now in 30 seconds:
+
+STEP 1: OPEN DEVTOOLS CONSOLE (F12)
+  Press F12 in Chrome while on Live Server, and click the "Console" tab.
+  Look at the logs:
+  - Do you see: "[Atsuko Voice] Speech recognizer notice: audio-capture"?
+    -> This confirms Cause 1 (WASAPI device conflict).
+  - Do you see: "The AudioContext was not allowed to start"?
+    -> This confirms Cause 2 (Chrome Autoplay suspension).
+  - Do you see: "sw.js: Cache v120 / v121"?
+    -> This confirms Cause 3 (Stale Service Worker cache).
+
+STEP 2: CHECK THE URL PORT
+  Look at your browser's address bar:
+  Is it http://127.0.0.1:5500 or http://127.0.0.1:5501?
+  If the port is 5501, click the icon to the left of the URL and ensure
+  Microphone is set to "Allow".
+
+STEP 3: PRESS "CTRL + SHIFT + D" TO OPEN ATSUKO'S BUILT-IN DIAGNOSTICS HUD
+  In Atsuko, press Ctrl + Shift + D on your keyboard.
+  A transparent diagnostic HUD will appear on screen:
+  - Mic Status: Connected or Disconnected?
+  - AudioContext State: "running" or "suspended"?
+  - Live RMS Volume Bar: Does it dance when you speak into the microphone?
+
+
+--------------------------------------------------------------------------------
+5. HOW TO GET IT WORKING IMMEDIATELY ON YOUR LIVE SERVER
+--------------------------------------------------------------------------------
+
+To clear the browser's morning stale state and get it responding immediately:
+
+1. FORCE-CLEAR THE SERVICE WORKER CACHE:
+   - In Chrome, press: Ctrl + Shift + Delete
+   - Select "Cached images and files" and click "Clear data".
+   - (OR press F12 -> Application tab -> Storage -> click "Clear site data").
+
+2. REFRESH WITH HARD CACHE BYPASS:
+   - Press Ctrl + F5 (or Shift + F5).
+
+3. CLICK ONCE ANYWHERE IN THE APP:
+   - Click any song, button, or background to satisfy Chrome's Autoplay Policy
+     and wake up the AudioContext from "suspended" to "running".
+
+4. SPEAK YOUR WAKE PHRASE:
+   - Say: "Night" or "Hey Night".
+
+
+--------------------------------------------------------------------------------
+6. THE ARCHITECTURAL ROADMAP FOR PERMANENT ROCK-SOLID OPERATION
+--------------------------------------------------------------------------------
+
+When you allow us to update the code in the next turn, here is the clean, permanent
+architectural solution that will completely eliminate this issue forever:
+
+1. FIX THE SERVICE WORKER CACHE TRAP:
+   Remove { ignoreSearch: true } for JavaScript files in sw.js so that version
+   bumps (?v=122, ?v=123) are GUARANTEED to load immediately without manual cache clearing.
+
+2. ELIMINATE WASAPI DEVICE CONTENTION (UNIFIED MICROPHONE STREAM):
+   Instead of running two independent microphone streams (getUserMedia and
+   SpeechRecognition fighting over the Windows hardware pipe):
+   - Use SpeechRecognition as the continuous master listener on desktop.
+   - Or connect getUserMedia cleanly without AGC hardware lock, preventing
+     Chrome's SpeechRecognition from throwing "audio-capture".
+
+3. ZERO-GESTURE AUDIO CONTEXT AUTOPLAY RESUMPTION:
+   Add an automatic touch/click listener on document.body that instantly calls
+   audioContext.resume() the moment the user interacts with the app, ensuring
+   zero latency when "Night" is spoken.
+================================================================================
+

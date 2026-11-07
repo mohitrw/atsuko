@@ -16,9 +16,14 @@ class MusicPlayer {
     this.playbackMode = localStorage.getItem('musico-playback-mode') || 'normal';
     this.isShuffle = this.playbackMode === 'shuffle';
     this.repeatMode = this.playbackMode === 'repeat_one' ? 'one' : 'all';
-    this.volume = 0.85;
+    this.volume = 1.0;
     this.activePlaylistId = null;
     this.activePlaylistName = null;
+
+    // Smart Audio Ducking State for Voice Assistant
+    this.isDucked = false;
+    this.savedUserVolume = null;
+    this._duckRampTimer = null;
 
     // Web Audio API setup
     this.audioCtx = null;
@@ -51,20 +56,27 @@ class MusicPlayer {
   updateEffectiveVolume() {
     const isMobile = this.isMobileDevice();
     const multiplier = isMobile ? 1.6 : 1.0;
-    const effectiveGain = this.volume * multiplier;
+    const baseVol = (this.isDucked && this.savedUserVolume !== null)
+      ? Math.max(0.02, this.savedUserVolume * 0.18)
+      : (this.volume !== undefined ? this.volume : 1.0);
+    const effectiveGain = baseVol * multiplier;
 
     if (this.gainNode && this.audioCtx) {
-      this.gainNode.gain.setValueAtTime(effectiveGain, this.audioCtx.currentTime);
-      // Keep underlying media element at full scale when routed through Web Audio gain node
+      try {
+        const now = this.audioCtx.currentTime;
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(effectiveGain, now);
+      } catch (e) {
+        console.warn('Could not update gain:', e);
+      }
       this.audio.volume = 1.0;
-    } else {
-      // Fallback before Web Audio initialization
-      this.audio.volume = Math.max(0, Math.min(1, this.volume));
+    } else if (this.audio) {
+      this.audio.volume = Math.max(0, Math.min(1, baseVol));
     }
   }
 
   /**
-   * Initialize Web Audio API nodes with safe transparent dynamics compressor
+   * Initialize Web Audio API nodes with clean uncompressed bit-perfect signal chain
    */
   initWebAudio() {
     if (this.isAudioCtxInitialized) return;
@@ -77,18 +89,9 @@ class MusicPlayer {
 
       this.gainNode = this.audioCtx.createGain();
 
-      // Soft-knee transparent limiter / compressor to prevent digital clipping when amplified
-      this.compressor = this.audioCtx.createDynamicsCompressor();
-      this.compressor.threshold.setValueAtTime(-1.0, this.audioCtx.currentTime);
-      this.compressor.knee.setValueAtTime(6.0, this.audioCtx.currentTime);
-      this.compressor.ratio.setValueAtTime(16.0, this.audioCtx.currentTime);
-      this.compressor.attack.setValueAtTime(0.003, this.audioCtx.currentTime);
-      this.compressor.release.setValueAtTime(0.25, this.audioCtx.currentTime);
-
       this.sourceNode = this.audioCtx.createMediaElementSource(this.audio);
       this.sourceNode.connect(this.gainNode);
-      this.gainNode.connect(this.compressor);
-      this.compressor.connect(this.analyser);
+      this.gainNode.connect(this.analyser);
       this.analyser.connect(this.audioCtx.destination);
 
       this.isAudioCtxInitialized = true;
@@ -271,6 +274,7 @@ class MusicPlayer {
     this.updateNowPlayingUI();
     this.updatePlayPauseUI();
     this.updateProgressUI();
+    this.updateEffectiveVolume();
   }
 
   /**
@@ -279,6 +283,7 @@ class MusicPlayer {
   async loadAndPlay(index) {
     this.initWebAudio();
     await this.loadTrack(index);
+    this.updateEffectiveVolume();
     try {
       await this.audio.play();
       this.isPlaying = true;
@@ -302,6 +307,7 @@ class MusicPlayer {
     }
 
     if (this.audio.paused) {
+      this.updateEffectiveVolume();
       try {
         await this.audio.play();
         this.isPlaying = true;
@@ -313,6 +319,38 @@ class MusicPlayer {
       this.isPlaying = false;
     }
     this.updatePlayPauseUI();
+  }
+
+  /**
+   * Explicit Play (safe wrapper for Voice Assistant & Shortcuts)
+   */
+  async play() {
+    this.initWebAudio();
+    if (!this.currentTrack && this.queue.length > 0) {
+      await this.loadAndPlay(0);
+      return;
+    }
+    if (this.audio) {
+      this.updateEffectiveVolume();
+      try {
+        await this.audio.play();
+        this.isPlaying = true;
+      } catch (e) {
+        console.warn('Play error:', e);
+      }
+      this.updatePlayPauseUI();
+    }
+  }
+
+  /**
+   * Explicit Pause (safe wrapper for Voice Assistant & Shortcuts)
+   */
+  pause() {
+    if (this.audio) {
+      this.audio.pause();
+      this.isPlaying = false;
+      this.updatePlayPauseUI();
+    }
   }
 
   /**
@@ -363,8 +401,115 @@ class MusicPlayer {
    * Set Volume (0 to 1)
    */
   setVolume(val) {
-    this.volume = Math.max(0, Math.min(1, val));
+    const clamped = Math.max(0, Math.min(1, val));
+    this.volume = clamped;
+    if (this.isDucked) {
+      this.savedUserVolume = clamped;
+    }
     this.updateEffectiveVolume();
+  }
+
+  /**
+   * Smooth Smart Audio Ducking for Voice Assistant.
+   * Fades music down to ~18% of user's active volume level,
+   * saving the user's exact volume to restore later.
+   * @param {number} ratio Target volume ratio (0.15 - 0.20, default 0.18)
+   * @param {number} durationMs Transition ramp duration in ms (default 250)
+   */
+  duckAudio(ratio = 0.18, durationMs = 250) {
+    if (this.isDucked) return;
+    this.isDucked = true;
+    this.savedUserVolume = this.volume !== undefined ? this.volume : 1.0;
+
+    const targetVol = Math.max(0.02, this.savedUserVolume * ratio);
+
+    if (this.gainNode && this.audioCtx) {
+      try {
+        if (this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
+        const isMobile = this.isMobileDevice();
+        const multiplier = isMobile ? 1.6 : 1.0;
+        const targetGain = targetVol * multiplier;
+        const now = this.audioCtx.currentTime;
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
+        this.gainNode.gain.linearRampToValueAtTime(targetGain, now + (durationMs / 1000));
+        setTimeout(() => {
+          if (this.isDucked && this.gainNode && this.audioCtx) {
+            try {
+              this.gainNode.gain.cancelScheduledValues(this.audioCtx.currentTime);
+              this.gainNode.gain.setValueAtTime(targetGain, this.audioCtx.currentTime);
+            } catch (_) {}
+          }
+        }, durationMs + 20);
+        this.audio.volume = 1.0;
+      } catch (err) {
+        console.debug('[Player] Web Audio duck notice:', err);
+      }
+    } else if (this.audio) {
+      clearInterval(this._duckRampTimer);
+      const startVol = this.audio.volume;
+      const steps = 15;
+      const stepTime = Math.max(10, durationMs / steps);
+      let step = 0;
+      this._duckRampTimer = setInterval(() => {
+        step++;
+        const progress = step / steps;
+        this.audio.volume = Math.max(0, Math.min(1, startVol + (targetVol - startVol) * progress));
+        if (step >= steps) {
+          clearInterval(this._duckRampTimer);
+          this._duckRampTimer = null;
+          this.audio.volume = targetVol;
+        }
+      }, stepTime);
+    }
+  }
+
+  /**
+   * Smooth Smart Audio Volume Restoration.
+   * Fades music back up to the EXACT saved user volume (not a fixed 100%).
+   * @param {number} durationMs Transition ramp duration in ms (default 300)
+   */
+  restoreAudio(durationMs = 300) {
+    const targetVol = (this.savedUserVolume !== null && this.savedUserVolume !== undefined)
+      ? this.savedUserVolume
+      : (this.volume !== undefined ? this.volume : 1.0);
+
+    this.isDucked = false;
+    this.savedUserVolume = null;
+    this.volume = targetVol;
+
+    clearInterval(this._duckRampTimer);
+    this._duckRampTimer = null;
+
+    if (this.gainNode && this.audioCtx) {
+      try {
+        if (this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
+        const isMobile = this.isMobileDevice();
+        const multiplier = isMobile ? 1.6 : 1.0;
+        const targetGain = targetVol * multiplier;
+        const now = this.audioCtx.currentTime;
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
+        this.gainNode.gain.linearRampToValueAtTime(targetGain, now + (durationMs / 1000));
+        setTimeout(() => {
+          if (!this.isDucked && this.gainNode && this.audioCtx) {
+            try {
+              this.gainNode.gain.cancelScheduledValues(this.audioCtx.currentTime);
+              this.gainNode.gain.setValueAtTime(targetGain, this.audioCtx.currentTime);
+            } catch (_) {}
+          }
+        }, durationMs + 20);
+        this.audio.volume = 1.0;
+      } catch (err) {
+        console.debug('[Player] Web Audio unduck notice:', err);
+      }
+    } else if (this.audio) {
+      this.audio.volume = targetVol;
+    }
   }
 
   /**

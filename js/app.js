@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.appFileManager = fileManager;
   window.fileManager = fileManager;
   window.player = player;
+  window.getAllTracks = () => allTracks;
+  Object.defineProperty(window, 'allTracks', {
+    get: () => allTracks,
+    set: (val) => { allTracks = val; },
+    configurable: true
+  });
 
   // App State
   let allTracks = [];
