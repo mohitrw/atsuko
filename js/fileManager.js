@@ -124,7 +124,7 @@ class FileManager {
    */
   async selectDirectory(options = {}) {
     const isMobile = window.innerWidth <= 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    
+
     // On PC: Use modern showOpenFilePicker for selecting single or multiple audio files
     if (!isMobile && 'showOpenFilePicker' in window) {
       try {
@@ -436,6 +436,10 @@ class FileManager {
     return this.saveTracksBatchToDB([track]);
   }
 
+  async saveTrack(track) {
+    return this.saveTrackToDB(track);
+  }
+
   /**
    * Fast Load stored tracks from IndexedDB with persistent cover artwork restoration & sorting
    */
@@ -493,17 +497,46 @@ class FileManager {
   }
 
   /**
+   * Completely clear all audio tracks, playlists, and cached metadata
+   */
+  async clearAllData() {
+      if (!this.db) await this.initDB();
+      if (this.db) {
+        await new Promise((resolve) => {
+          try {
+            const stores = [];
+            if (this.db.objectStoreNames.contains('tracks')) stores.push('tracks');
+            if (this.db.objectStoreNames.contains('playlists')) stores.push('playlists');
+            if (stores.length === 0) {
+              resolve();
+              return;
+            }
+            const tx = this.db.transaction(stores, 'readwrite');
+            stores.forEach(s => tx.objectStore(s).clear());
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+          } catch (e) {
+            console.warn('Error clearing IndexedDB stores:', e);
+            resolve();
+          }
+        });
+      }
+
+      try {
+      localStorage.removeItem('musico_playlists');
+      localStorage.removeItem('musico_favourites');
+      localStorage.removeItem('musico_genre_cache');
+      localStorage.removeItem('musico-last-played-id');
+      localStorage.removeItem('musico_user_feedback');
+    } catch (e) { }
+  }
+
+  /**
    * Clear all tracks from IndexedDB
    */
   async clearAllTracks() {
-    if (!this.db) await this.initDB();
-    if (!this.db) return;
-    try {
-      const tx = this.db.transaction('tracks', 'readwrite');
-      tx.objectStore('tracks').clear();
-    } catch (e) {
-      console.warn('Error clearing DB:', e);
-    }
+    return this.clearAllData();
   }
 
   /**
@@ -560,7 +593,10 @@ class FileManager {
           resolve(playlists);
         };
 
-        req.onerror = () => resolve(this.getPlaylistsFromLocalStorage());
+        req.onerror = () => {
+          const local = this.getPlaylistsFromLocalStorage();
+          resolve(local || []);
+        };
       } catch (e) {
         console.warn('Error fetching playlists:', e);
         resolve(this.getPlaylistsFromLocalStorage());
@@ -635,6 +671,22 @@ class FileManager {
       tx.objectStore('playlists').delete(playlistId);
     } catch (e) {
       console.warn('Error deleting playlist from DB:', e);
+    }
+  }
+
+  /**
+   * Completely clear all playlists from IndexedDB and LocalStorage
+   */
+  async clearPlaylists() {
+    this.savePlaylistsToLocalStorage([]);
+    if (!this.db) await this.initDB();
+    if (!this.db || !this.db.objectStoreNames.contains('playlists')) return;
+
+    try {
+      const tx = this.db.transaction('playlists', 'readwrite');
+      tx.objectStore('playlists').clear();
+    } catch (e) {
+      console.warn('Error clearing playlists store:', e);
     }
   }
 
@@ -726,7 +778,7 @@ class FileManager {
       if (localVal !== null && localVal !== undefined) {
         return JSON.parse(localVal);
       }
-    } catch (e) {}
+    } catch (e) { }
 
     if (!this.db) await this.initDB();
     if (!this.db || !this.db.objectStoreNames.contains('settings')) {
@@ -752,7 +804,7 @@ class FileManager {
     if (!key) return;
     try {
       localStorage.setItem(`musico_setting_${key}`, JSON.stringify(value));
-    } catch (e) {}
+    } catch (e) { }
 
     if (!this.db) await this.initDB();
     if (!this.db || !this.db.objectStoreNames.contains('settings')) return;
@@ -814,7 +866,10 @@ class FileManager {
     try {
       customAvatar = localStorage.getItem('musico_profile_image') || (this._cachedAvatar || await this.getSetting('musico_profile_image'));
       customUsername = localStorage.getItem('musico_profile_username') || (this._cachedUsername || await this.getSetting('musico_profile_username')) || 'USER';
-    } catch (e) {}
+      if (customUsername === 'v22' || customUsername === 'V22') {
+        customUsername = (typeof localStorage !== 'undefined' && (localStorage.getItem('atsuko_last_valid_username') || localStorage.getItem('atsuko_previous_username'))) || 'USER';
+      }
+    } catch (e) { }
 
     return {
       name: customUsername,
@@ -830,7 +885,7 @@ class FileManager {
     this._cachedUsername = cleanName;
     try {
       localStorage.setItem('musico_profile_username', cleanName);
-    } catch (e) {}
+    } catch (e) { }
     await this.saveSetting('musico_profile_username', cleanName);
   }
 
@@ -839,7 +894,7 @@ class FileManager {
     this._cachedAvatar = dataUrl;
     try {
       localStorage.setItem('musico_profile_image', dataUrl);
-    } catch (e) {}
+    } catch (e) { }
     await this.saveSetting('musico_profile_image', dataUrl);
   }
 
@@ -891,7 +946,7 @@ class FileManager {
     this._cachedStats = stats;
     try {
       localStorage.setItem('musico_setting_musico_playback_stats', JSON.stringify(stats));
-    } catch (e) {}
+    } catch (e) { }
 
     // Debounce background write to IndexedDB
     if (this._statsSaveTimeout) clearTimeout(this._statsSaveTimeout);

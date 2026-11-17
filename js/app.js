@@ -83,8 +83,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     try {
       localStorage.setItem(FAVOURITES_STORAGE_KEY, JSON.stringify(favs));
-    } catch (e) {}
-    
+    } catch (e) { }
+
     updateMiniPlayerFavUI();
     if (typeof updateAlbumDetailFavSongs === 'function' && currentView === 'album_detail' && selectedAlbumName) {
       updateAlbumDetailFavSongs(selectedAlbumName);
@@ -122,11 +122,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cache[track.id]) {
         return cache[track.id];
       }
-    } catch (e) {}
+    } catch (e) { }
 
     let matchedGenre = null;
     const rawMeta = `${track.genre || ''} ${track.tag || ''} ${track.title || ''} ${track.album || ''} ${track.artist || ''}`.toLowerCase();
-    
+
     for (const [genreKey, keywords] of Object.entries(GENRE_KEYWORD_MAP)) {
       if (keywords.some(kw => rawMeta.includes(kw))) {
         matchedGenre = MUSICO_GENRES.find(g => g.toLowerCase() === genreKey);
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const cache = JSON.parse(localStorage.getItem('musico_genre_cache') || '{}');
       cache[track.id] = matchedGenre;
       localStorage.setItem('musico_genre_cache', JSON.stringify(cache));
-    } catch (e) {}
+    } catch (e) { }
 
     return matchedGenre;
   }
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (window.history && window.history.state && window.history.state.isSearch) {
     try {
       window.history.replaceState(null, '');
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function enterSearchHistory() {
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         window.history.pushState({ isSearch: true }, '');
         isSearchHistoryActive = true;
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.history && window.history.state && window.history.state.isSearch) {
       try {
         window.history.replaceState(null, '');
-      } catch (e) {}
+      } catch (e) { }
     }
     setAllFilter();
   }
@@ -283,9 +283,765 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // =========================================================================
+  // ATSUKO V1 - ATU PERSISTENCE & DATA FOLDER COORDINATOR
+  // =========================================================================
+
+  function syncToAtu(immediate = false) {
+    if (!window.dataFolderService) return;
+    const existing = window.dataFolderService.cachedData || window.AtuSchema.createDefaultData();
+    const clean = { ...existing };
+
+    // When pending reconciliation with an incoming file from a folder change, retain that file's original values
+    if (window.dataFolderService.pendingReconciliation) {
+      clean.profile = window.dataFolderService.originalAtuProfile || existing.profile || {
+        username: localStorage.getItem('musico_profile_username') || 'USER',
+        avatar: localStorage.getItem('musico_profile_image') || 'assets/default-avatar.svg',
+        joinedAt: new Date().toISOString()
+      };
+      clean.stats = window.dataFolderService.originalAtuStats || existing.stats || { totalListeningSec: 0, songsPlayed: 0 };
+    } else {
+      // Normal state or reconciled: write current active in-app profile & stats
+      clean.profile = {
+        username: localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER',
+        avatar: localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg',
+        joinedAt: clean.profile?.joinedAt || new Date().toISOString()
+      };
+      if (fileManager && fileManager._cachedStats) {
+        clean.stats = {
+          totalListeningSec: Math.round(fileManager._cachedStats.totalListeningSeconds || 0),
+          songsPlayed: fileManager._cachedStats.totalSongsPlayed || 0
+        };
+      }
+    }
+
+    clean.settings = {
+      theme: currentTheme || 'dark',
+      volume: player ? player.volume : 1.0,
+      eqPreset: localStorage.getItem('musico_eq_preset') || 'flat',
+      voiceAssistant: localStorage.getItem('musico_voice_assistant') !== 'false'
+    };
+
+    // Merge live playlists with originalAtuPlaylists to ensure pending playlists aren't dropped
+    const plMap = new Map();
+    if (window.dataFolderService && Array.isArray(window.dataFolderService.originalAtuPlaylists)) {
+      for (const pl of window.dataFolderService.originalAtuPlaylists) {
+        if (pl && pl.name) {
+          plMap.set(pl.name.trim().toLowerCase(), { ...pl });
+        }
+      }
+    }
+    if (Array.isArray(playlists)) {
+      for (const pl of playlists) {
+        if (pl && pl.name) {
+          plMap.set(pl.name.trim().toLowerCase(), { ...pl });
+        }
+      }
+    }
+    clean.playlists = Array.from(plMap.values());
+
+    clean.folders = window.folderService ? window.folderService.getAllFolders() : [];
+    clean.favourites = getFavouriteTrackIds();
+
+    const songMap = new Map();
+    if (window.dataFolderService && Array.isArray(window.dataFolderService.originalAtuSongs)) {
+      for (const s of window.dataFolderService.originalAtuSongs) {
+        const key = `${(s.title || '').trim().toLowerCase()}_${s.fingerprint?.size || 0}`;
+        songMap.set(key, s);
+      }
+    }
+    allTracks.forEach(t => {
+      const fp = t.fingerprint || {
+        name: t.title || t.name || '',
+        size: t.fileBlob?.size || 0,
+        durationSec: Math.round(t.duration || 0),
+        lastModified: t.fileBlob?.lastModified || Date.now(),
+        hash: `size_${t.fileBlob?.size || 0}_${t.title || ''}`
+      };
+      const key = `${(t.title || '').trim().toLowerCase()}_${fp.size || 0}`;
+      songMap.set(key, {
+        id: t.id,
+        fingerprint: fp,
+        relativePath: t.relativePath || t.fileBlob?.name || t.title,
+        title: t.title,
+        artist: t.artist,
+        album: t.album,
+        genre: t.genre || 'Unknown',
+        lyrics: t.lyrics || '',
+        addedAt: t.addedAt ? (typeof t.addedAt === 'number' ? new Date(t.addedAt).toISOString() : t.addedAt) : new Date().toISOString(),
+        folderId: t.folderId || null,
+        favourite: isFavourite(t.id),
+        playCount: t.playCount || 0,
+        lastPlayedAt: t.lastPlayedAt || null,
+        source: t.source || 'imported',
+        isMissing: Boolean(t.isMissing)
+      });
+    });
+    clean.songs = Array.from(songMap.values());
+
+    window.dataFolderService.save(clean, immediate);
+  }
+  window.syncToAtu = syncToAtu;
+
+  // Smart Song Matching Algorithm (Matching incoming files to stored .atu records)
+  function findMatchingSongRecord(file, songPool, usedSongIds = new Set()) {
+    if (!file || !songPool || songPool.length === 0) return null;
+
+    const fileName = (file.name || '').trim();
+    const fileSize = file.size || 0;
+    const fileNameLower = fileName.toLowerCase();
+    const baseName = fileName.replace(/\.[^/.]+$/, '').trim();
+    const baseNameLower = baseName.toLowerCase();
+    const strippedTrackNum = baseName.replace(/^(\d{1,3}[\s\.\-_]+)+/, '').trim().toLowerCase();
+
+    // Clean candidate title (handling "Artist - Title" format)
+    let candArtist = '';
+    let candTitle = baseNameLower;
+    if (baseName.includes(' - ')) {
+      const parts = baseName.split(' - ');
+      candArtist = parts[0].trim().toLowerCase();
+      candTitle = parts.slice(1).join(' - ').trim().toLowerCase();
+    }
+
+    function extractNames(s) {
+      const raw = (s.relativePath || s.fileBlob?.name || s.fingerprint?.name || '').trim().toLowerCase();
+      const base = raw.split(/[\/\\]/).pop().trim();
+      const baseNoExt = base.replace(/\.[^/.]+$/, '').trim();
+      return { raw, base, baseNoExt };
+    }
+
+    // Pass 1: Exact filename / basename + exact file size
+    for (const s of songPool) {
+      if (usedSongIds.has(s.id)) continue;
+      const { raw, base, baseNoExt } = extractNames(s);
+      const sSize = s.fileBlob?.size || s.fingerprint?.size || 0;
+      if (sSize > 0 && sSize === fileSize) {
+        if (raw === fileNameLower || base === fileNameLower || baseNoExt === baseNameLower) {
+          return s;
+        }
+      }
+    }
+
+    // Pass 2: Exact filename / basename / stripped track number
+    for (const s of songPool) {
+      if (usedSongIds.has(s.id)) continue;
+      const { raw, base, baseNoExt } = extractNames(s);
+      if (raw === fileNameLower || base === fileNameLower || baseNoExt === baseNameLower || baseNoExt === strippedTrackNum) {
+        return s;
+      }
+    }
+
+    // Pass 3: Title or fingerprint name + exact size
+    for (const s of songPool) {
+      if (usedSongIds.has(s.id)) continue;
+      const sTitle = (s.title || '').trim().toLowerCase();
+      const { base, baseNoExt } = extractNames(s);
+      const sSize = s.fileBlob?.size || s.fingerprint?.size || 0;
+      if (sSize > 0 && sSize === fileSize) {
+        if (sTitle === baseNameLower || sTitle === candTitle || sTitle === strippedTrackNum || base === fileNameLower || baseNoExt === baseNameLower) {
+          return s;
+        }
+      }
+    }
+
+    // Pass 4: Title + Artist match (or title match if artist is unknown)
+    for (const s of songPool) {
+      if (usedSongIds.has(s.id)) continue;
+      const sTitle = (s.title || '').trim().toLowerCase();
+      const sArtist = (s.artist || '').trim().toLowerCase();
+      if (sTitle && (sTitle === baseNameLower || sTitle === candTitle || sTitle === strippedTrackNum)) {
+        if (!candArtist || !sArtist || sArtist === 'unknown' || sArtist === candArtist) {
+          return s;
+        }
+      }
+    }
+
+    // Pass 5: SongFingerprint.getMatchScore if fingerprint is present
+    if (window.SongFingerprint) {
+      for (const s of songPool) {
+        if (usedSongIds.has(s.id)) continue;
+        const score = window.SongFingerprint.getMatchScore(file, s);
+        if (score > 0) {
+          return s;
+        }
+      }
+    }
+
+    // Pass 6: Exact title match regardless of artist or size
+    for (const s of songPool) {
+      if (usedSongIds.has(s.id)) continue;
+      const sTitle = (s.title || '').trim().toLowerCase();
+      if (sTitle && (sTitle === baseNameLower || sTitle === candTitle || sTitle === strippedTrackNum)) {
+        return s;
+      }
+    }
+
+    return null;
+  }
+  window.findMatchingSongRecord = findMatchingSongRecord;
+
+  async function handleRestoreReturningUser(data, shouldPickSongs = true, isFolderChange = false) {
+    if (!data) return;
+
+    // Cache the incoming file's original profile and stats in dataFolderService
+    if (window.dataFolderService) {
+      if (data.profile) {
+        if (data.profile.username === 'v22' || data.profile.username === 'V22') {
+          data.profile.username = localStorage.getItem('atsuko_last_valid_username') ||
+            localStorage.getItem('atsuko_previous_username') ||
+            (localStorage.getItem('musico_profile_username') !== 'current' ? localStorage.getItem('musico_profile_username') : 'new') ||
+            'new';
+        }
+        window.dataFolderService.originalAtuProfile = JSON.parse(JSON.stringify(data.profile));
+      } else {
+        window.dataFolderService.originalAtuProfile = { username: 'USER', avatar: 'assets/default-avatar.svg' };
+      }
+      if (data.stats) {
+        window.dataFolderService.originalAtuStats = JSON.parse(JSON.stringify(data.stats));
+      } else {
+        window.dataFolderService.originalAtuStats = { totalListeningSec: 0, songsPlayed: 0 };
+      }
+      if (!window.dataFolderService.currentInAppProfileSnapshot) {
+        window.dataFolderService.currentInAppProfileSnapshot = {
+          username: localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER',
+          avatar: localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg'
+        };
+      }
+      if (!window.dataFolderService.currentInAppStatsSnapshot && fileManager && fileManager._cachedStats) {
+        window.dataFolderService.currentInAppStatsSnapshot = {
+          totalListeningSeconds: Math.round(fileManager._cachedStats.totalListeningSeconds || 0),
+          totalSongsPlayed: fileManager._cachedStats.totalSongsPlayed || 0
+        };
+      }
+    }
+
+    // Only apply profile automatically on initial fresh onboarding welcome (NOT when changing folders in Settings)
+    if (!isFolderChange && shouldPickSongs) {
+      if (data.profile) {
+        if (data.profile.username) {
+          localStorage.setItem('musico_profile_username', data.profile.username);
+          localStorage.setItem('musico_profile_name', data.profile.username);
+        }
+        if (data.profile.avatar) {
+          localStorage.setItem('musico_profile_image', data.profile.avatar);
+          localStorage.setItem('musico_profile_avatar', data.profile.avatar);
+        }
+        if (typeof window.refreshAppProfileAndStatsUI === 'function') {
+          window.refreshAppProfileAndStatsUI(data.profile.username, data.profile.avatar);
+        }
+      }
+    }
+
+    if (data.settings) {
+      if (data.settings.theme) {
+        applyTheme(data.settings.theme);
+      }
+      if (typeof data.settings.volume === 'number' && player) {
+        player.setVolume(data.settings.volume);
+      }
+    }
+
+    // 1. Merge Folders (Combine existing and incoming)
+    if (Array.isArray(data.folders) && window.folderService) {
+      const existingFolders = window.folderService.getAllFolders();
+      const folderMap = new Map();
+      existingFolders.forEach(f => {
+        if (f && f.name) folderMap.set(f.name.toLowerCase().trim(), f);
+      });
+      data.folders.forEach(f => {
+        if (!f || !f.name) return;
+        const k = f.name.toLowerCase().trim();
+        if (!folderMap.has(k)) {
+          folderMap.set(k, f);
+        }
+      });
+      window.folderService.init(Array.from(folderMap.values()));
+    }
+
+    // 2. Merge Playlists: Never wipe existing playlists when changing folder without clear
+    const existingPlaylists = Array.isArray(playlists) ? playlists : [];
+    const incomingPlaylists = Array.isArray(data.playlists) ? data.playlists : [];
+
+    // Combine into originalAtuPlaylists pool for pending matches
+    const allOriginal = [];
+    if (window.dataFolderService && Array.isArray(window.dataFolderService.originalAtuPlaylists)) {
+      allOriginal.push(...window.dataFolderService.originalAtuPlaylists);
+    }
+    allOriginal.push(...incomingPlaylists);
+    const origMap = new Map();
+    allOriginal.forEach(p => {
+      if (p && p.name) origMap.set(p.name.trim().toLowerCase(), p);
+    });
+    if (window.dataFolderService) {
+      window.dataFolderService.originalAtuPlaylists = Array.from(origMap.values());
+    }
+
+    const plMap = new Map();
+    // Preserve existing active playlists
+    existingPlaylists.forEach(p => {
+      if (p && p.name) plMap.set(p.name.trim().toLowerCase(), { ...p });
+    });
+
+    // Merge incoming playlists
+    for (const pl of incomingPlaylists) {
+      if (!pl || !pl.name) continue;
+      const key = pl.name.trim().toLowerCase();
+      const incomingTids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
+      if (plMap.has(key)) {
+        const existing = plMap.get(key);
+        const existingTids = Array.isArray(existing.trackIds) ? existing.trackIds : [];
+        const mergedTids = Array.from(new Set([...existingTids, ...incomingTids]));
+        existing.trackIds = mergedTids;
+        existing.songIds = mergedTids;
+      } else {
+        const hasLive = incomingTids.some(id => allTracks.some(t => t.id === id && !t.isMissing));
+        if (hasLive) {
+          plMap.set(key, { ...pl, trackIds: incomingTids, songIds: incomingTids });
+        }
+      }
+    }
+
+    playlists = Array.from(plMap.values());
+    for (const p of playlists) {
+      await fileManager.savePlaylist(p);
+    }
+
+    // 3. Merge Songs Metadata Pool in dataFolderService
+    if (Array.isArray(data.songs) && window.dataFolderService) {
+      const existingOrigSongs = Array.isArray(window.dataFolderService.originalAtuSongs) ? window.dataFolderService.originalAtuSongs : [];
+      const sMap = new Map();
+      existingOrigSongs.forEach(s => {
+        const k = `${(s.title || '').trim().toLowerCase()}_${s.fingerprint?.size || 0}`;
+        sMap.set(k, s);
+      });
+      data.songs.forEach(s => {
+        const k = `${(s.title || '').trim().toLowerCase()}_${s.fingerprint?.size || 0}`;
+        if (!sMap.has(k)) sMap.set(k, s);
+      });
+      window.dataFolderService.originalAtuSongs = Array.from(sMap.values());
+    }
+
+    // 4. Merge Favourites
+    if (Array.isArray(data.favourites)) {
+      const currentFavs = getFavouriteTrackIds();
+      const combinedFavs = Array.from(new Set([...currentFavs, ...data.favourites]));
+      try {
+        localStorage.setItem(FAVOURITES_STORAGE_KEY, JSON.stringify(combinedFavs));
+      } catch (e) { }
+    } else if (Array.isArray(data.songs)) {
+      const favIds = data.songs.filter(s => s.favourite).map(s => s.id);
+      if (favIds.length > 0) {
+        const currentFavs = getFavouriteTrackIds();
+        const combinedFavs = Array.from(new Set([...currentFavs, ...favIds]));
+        try {
+          localStorage.setItem(FAVOURITES_STORAGE_KEY, JSON.stringify(combinedFavs));
+        } catch (e) { }
+      }
+    }
+
+    // Keep allTracks free of unplayable fake stubs; only real recordings/songs stay
+    allTracks = allTracks.filter(t => !t.isMissing && (t.fileBlob || (t.id && t.id.startsWith('disk_rec_'))));
+    FileManager.sortTracks(allTracks);
+    renderSongList();
+
+    if (currentView === 'playlists') {
+      renderPlaylistsView();
+    } else if (currentView === 'folders_main') {
+      renderFoldersGridView();
+      populateFavFolders();
+      populateFoldersMainArtwork();
+    }
+
+    const activeFileName = (window.dataFolderService && window.dataFolderService.activeFileName) || 'main.atu';
+    showToast(`Welcome back! Data restored from ${activeFileName}.`);
+
+    // Synchronize merged state back to .atu immediately
+    syncToAtu(true);
+
+    if (shouldPickSongs) {
+      setTimeout(() => {
+        openAddMusicModal();
+      }, 400);
+    }
+  }
+  window.handleRestoreReturningUser = handleRestoreReturningUser;
+
+  async function handleReconnectSongs() {
+    try {
+      let files = [];
+      const useFolder = confirm('Reconnect songs from a Music Folder?\n\nClick "OK" to select your Music Folder, or "Cancel" to select individual audio files.');
+
+      if (useFolder && 'showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          if (dirHandle) {
+            const fileList = [];
+            await fileManager.scanDirectoryHandle(dirHandle, fileList);
+            files = fileList.filter(f => FileManager.isAudioFile(f));
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      } else if ('showOpenFilePicker' in window) {
+        try {
+          const handles = await window.showOpenFilePicker({
+            multiple: true,
+            types: [{
+              description: 'Audio Files (*.mp3, *.wav, *.flac, *.m4a, *.aac, *.ogg, *.opus)',
+              accept: { 'audio/*': ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus'] }
+            }]
+          });
+          if (handles && handles.length > 0) {
+            files = await Promise.all(handles.map(h => h.getFile()));
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      } else {
+        files = await new Promise(resolve => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.multiple = true;
+          input.accept = 'audio/*';
+          input.onchange = (e) => resolve(Array.from(e.target.files || []));
+          input.click();
+        });
+      }
+      if (!files || files.length === 0) return;
+
+      const validFiles = files.filter(f => FileManager.isAudioFile(f));
+      if (validFiles.length === 0) {
+        showToast('No valid audio files selected.');
+        return;
+      }
+
+      showLoadingProgress(0, 0);
+
+      const existingSongsPool = [];
+      const seenIds = new Set();
+      for (const t of allTracks) {
+        if (!seenIds.has(t.id)) {
+          existingSongsPool.push(t);
+          seenIds.add(t.id);
+        }
+      }
+      if (window.dataFolderService && window.dataFolderService.cachedData && Array.isArray(window.dataFolderService.cachedData.songs)) {
+        for (const s of window.dataFolderService.cachedData.songs) {
+          if (!seenIds.has(s.id)) {
+            existingSongsPool.push({ ...s, isMissing: true, coverUrl: 'assets/atsuko-no-cover-image.svg' });
+            seenIds.add(s.id);
+          }
+        }
+      }
+
+      const matchedTracks = [];
+      const unmatchedFiles = [];
+      const usedRecordIds = new Set();
+
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const matchedRecord = findMatchingSongRecord(file, existingSongsPool, usedRecordIds);
+        if (matchedRecord) {
+          usedRecordIds.add(matchedRecord.id);
+          matchedRecord.fileBlob = file;
+          matchedRecord.isMissing = false;
+          matchedRecord.audioUrl = null;
+
+          try {
+            const meta = await ID3Parser.parse(file);
+            if (meta) {
+              if (meta.title && (!matchedRecord.title || matchedRecord.title.startsWith('Track '))) matchedRecord.title = meta.title;
+              if (meta.artist && (!matchedRecord.artist || matchedRecord.artist === 'Unknown')) matchedRecord.artist = meta.artist;
+              if (meta.album && (!matchedRecord.album || matchedRecord.album === 'Unknown Album')) matchedRecord.album = meta.album;
+              if (meta.coverBlob) {
+                matchedRecord.coverBlob = meta.coverBlob;
+                matchedRecord.coverUrl = URL.createObjectURL(meta.coverBlob);
+                matchedRecord.hasEmbeddedCover = true;
+              }
+              if (meta.lyrics && !matchedRecord.lyrics) matchedRecord.lyrics = meta.lyrics;
+            }
+          } catch (e) { }
+
+          if (window.SongFingerprint) {
+            try {
+              matchedRecord.fingerprint = await window.SongFingerprint.compute(file, matchedRecord.duration || 0, file.webkitRelativePath || file.name);
+            } catch (e) { }
+          }
+
+          await fileManager.saveTrackToDB(matchedRecord);
+          matchedTracks.push(matchedRecord);
+        } else {
+          unmatchedFiles.push(file);
+        }
+      }
+
+      // Unmatched files go through normal Add to Folder prompt
+      if (unmatchedFiles.length > 0) {
+        const folderTarget = await window.onboardingWizard.promptAddToFolder(unmatchedFiles.length);
+        if (folderTarget) {
+          const added = await fileManager.processAudioFiles(unmatchedFiles);
+          added.forEach(t => {
+            t.folderId = folderTarget.folderId;
+            allTracks.push(t);
+          });
+          window.folderService.assignSongsToFolder(folderTarget.folderId, added.map(t => t.id), allTracks);
+        }
+      }
+
+      // Update allTracks with reconnected songs
+      const matchedIds = new Set(matchedTracks.map(t => t.id));
+      allTracks.forEach(t => {
+        if (matchedIds.has(t.id)) {
+          const matched = matchedTracks.find(m => m.id === t.id);
+          if (matched) {
+            t.fileBlob = matched.fileBlob;
+            t.isMissing = false;
+            t.coverBlob = matched.coverBlob;
+            t.coverUrl = matched.coverUrl;
+            t.hasEmbeddedCover = matched.hasEmbeddedCover;
+          }
+        }
+      });
+      matchedTracks.forEach(m => {
+        if (!allTracks.some(t => t.id === m.id)) {
+          allTracks.push(m);
+        }
+      });
+
+      // Heal & sync playlists
+      if (!playlists || playlists.length === 0) {
+        playlists = await fileManager.getPlaylists();
+      }
+
+      const atuSongs = (window.dataFolderService && window.dataFolderService.cachedData && window.dataFolderService.cachedData.songs) || [];
+      for (const pl of playlists) {
+        if (Array.isArray(pl.trackIds)) {
+          for (let i = 0; i < pl.trackIds.length; i++) {
+            const tid = pl.trackIds[i];
+            const liveTrack = allTracks.find(t => t.id === tid && !t.isMissing);
+            if (!liveTrack) {
+              const oldSong = atuSongs.find(s => s.id === tid);
+              if (oldSong) {
+                const matchedLive = allTracks.find(t => !t.isMissing && (
+                  (t.title && oldSong.title && t.title.toLowerCase() === oldSong.title.toLowerCase()) ||
+                  (t.fileBlob && oldSong.fingerprint?.name && t.fileBlob.name.toLowerCase() === oldSong.fingerprint.name.toLowerCase()) ||
+                  (t.relativePath && oldSong.relativePath && t.relativePath.toLowerCase() === oldSong.relativePath.toLowerCase())
+                ));
+                if (matchedLive) pl.trackIds[i] = matchedLive.id;
+              }
+            }
+          }
+          await fileManager.savePlaylist(pl);
+        }
+      }
+
+      FileManager.sortTracks(allTracks);
+      renderSongList();
+      hideLoadingProgress();
+
+      const missingCount = allTracks.filter(t => t.isMissing).length;
+      showToast(`Restored ${matchedTracks.length} song${matchedTracks.length > 1 ? 's' : ''}!${missingCount > 0 ? ' ' + missingCount + ' are still missing.' : ''}`);
+      syncToAtu(true);
+
+      if (currentView === 'playlists') {
+        renderPlaylistsView();
+      } else if (currentView === 'playlist_songs' && activePlaylistId) {
+        renderPlaylistSongsView(activePlaylistId);
+      }
+    } catch (err) {
+      hideLoadingProgress();
+      console.warn('Reconnect canceled or error:', err);
+    }
+  }
+  // Get all active recordings: prioritize disk Recordings folder handle, fallback to fileManager
+  async function getAppRecordings() {
+    if (window.dataFolderService && window.dataFolderService.dirHandle) {
+      try {
+        const diskRecs = await window.dataFolderService.getDiskRecordings();
+        if (Array.isArray(diskRecs) && diskRecs.length > 0) {
+          return diskRecs;
+        }
+      } catch (e) {
+        console.warn('Error fetching disk recordings:', e);
+      }
+    }
+    const fallback = await fileManager.getRecordings();
+    return Array.isArray(fallback) ? fallback : [];
+  }
+  window.getAppRecordings = getAppRecordings;
+
+  // Synchronize disk recordings into in-memory allTracks and FolderService
+  async function syncDiskRecordingsToLibrary() {
+    if (!window.dataFolderService || !window.dataFolderService.dirHandle) return;
+    try {
+      const diskRecs = await window.dataFolderService.getDiskRecordings();
+
+      // Prune any disk_rec tracks from allTracks that no longer exist on disk
+      allTracks = allTracks.filter(t => {
+        if (t.id && t.id.startsWith('disk_rec_')) {
+          return diskRecs.some(r => r.id === t.id);
+        }
+        return true;
+      });
+
+      // Add or update disk recordings in allTracks with fresh fileBlob
+      diskRecs.forEach(rec => {
+        const existingIdx = allTracks.findIndex(t => t.id === rec.id || (t.source === 'recorded' && t.fileName === rec.fileName));
+        if (existingIdx !== -1) {
+          allTracks[existingIdx].fileBlob = rec.fileBlob;
+          allTracks[existingIdx].title = rec.title;
+        } else {
+          allTracks.push(rec);
+        }
+      });
+
+      // Ensure "Recordings" folder in folderService contains all disk recording IDs
+      if (window.folderService && diskRecs.length > 0) {
+        let recFolder = window.folderService.getFolderByName('Recordings');
+        if (!recFolder) {
+          const res = window.folderService.createFolder('Recordings');
+          recFolder = res.folder;
+        }
+        if (recFolder) {
+          window.folderService.assignSongsToFolder(recFolder.id, diskRecs.map(r => r.id));
+        }
+      }
+    } catch (err) {
+      console.warn('Could not sync disk recordings to library:', err);
+    }
+  }
+  window.syncDiskRecordingsToLibrary = syncDiskRecordingsToLibrary;
+
+  function playRecordingItem(rec) {
+    if (!rec) return;
+    player.setQueue([rec], 0, true);
+    player.updateNowPlayingUI();
+    showToast(`Playing ${rec.title || 'recording'}`);
+  }
+  window.playRecordingItem = playRecordingItem;
+
+  window.handleReconnectSongs = handleReconnectSongs;
+
+  async function initAtsukoDataAndLibrary() {
+    if (window.onboardingWizard) {
+      window.onboardingWizard.checkBrowserSupport();
+    }
+
+    await initLibrary();
+
+    if (window.dataFolderService) {
+      const savedHandle = await window.dataFolderService.loadSavedDirectoryHandle();
+      const banner = document.getElementById('dataFolderReconnectBanner');
+
+      if (savedHandle) {
+        await window.dataFolderService.connectDirectory(savedHandle);
+        const hasPermission = await window.dataFolderService.checkPermission(savedHandle);
+
+        if (hasPermission) {
+          if (banner) banner.style.display = 'none';
+          const res = await window.dataFolderService.readAtuFile();
+          if (res.data) {
+            if (res.data.folders && window.folderService) {
+              window.folderService.init(res.data.folders);
+            }
+            await fileManager.clearPlaylists();
+            if (Array.isArray(res.data.playlists) && res.data.playlists.length > 0) {
+              if (window.dataFolderService) {
+                window.dataFolderService.originalAtuPlaylists = JSON.parse(JSON.stringify(res.data.playlists));
+              }
+              const livePlaylists = [];
+              for (const pl of res.data.playlists) {
+                const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
+                const hasLive = tids.some(id => allTracks.some(t => t.id === id && !t.isMissing));
+                if (hasLive) {
+                  const p = { ...pl, trackIds: tids, songIds: tids };
+                  livePlaylists.push(p);
+                  await fileManager.savePlaylist(p);
+                }
+              }
+              playlists = livePlaylists;
+            } else {
+              playlists = [];
+            }
+            if (Array.isArray(res.data.songs) && res.data.songs.length > 0) {
+              if (window.dataFolderService) {
+                window.dataFolderService.originalAtuSongs = JSON.parse(JSON.stringify(res.data.songs));
+              }
+              const songMap = new Map(res.data.songs.map(s => [s.id, s]));
+              allTracks.forEach(t => {
+                const s = songMap.get(t.id);
+                if (s) {
+                  t.folderId = s.folderId;
+                  t.fingerprint = s.fingerprint;
+                  t.playCount = s.playCount || t.playCount || 0;
+                }
+              });
+              // Never populate allTracks with fake missing stubs! Only real files/recordings stay
+              allTracks = allTracks.filter(t => !t.isMissing && (t.fileBlob || (t.id && t.id.startsWith('disk_rec_'))));
+              FileManager.sortTracks(allTracks);
+              renderSongList();
+            }
+          }
+          await syncDiskRecordingsToLibrary();
+        } else {
+          if (banner) banner.style.display = 'flex';
+        }
+      } else {
+        const hasOnboarded = localStorage.getItem('atsuko_onboarded');
+        if (!hasOnboarded && window.onboardingWizard) {
+          window.onboardingWizard.openWelcome({
+            onComplete: async () => {
+              const pickRes = await window.onboardingWizard.pickDataFolder();
+              if (pickRes && pickRes.type === 'restore') {
+                await handleRestoreReturningUser(pickRes.data);
+              }
+              await syncDiskRecordingsToLibrary();
+              localStorage.setItem('atsuko_onboarded', 'true');
+            },
+            onRestore: async (data, shouldPickSongs) => {
+              localStorage.setItem('atsuko_onboarded', 'true');
+              await handleRestoreReturningUser(data, shouldPickSongs);
+              await syncDiskRecordingsToLibrary();
+            }
+          });
+        }
+      }
+
+      const reconnectBtn = document.getElementById('dataFolderReconnectBtn');
+      if (reconnectBtn) {
+        reconnectBtn.addEventListener('click', async () => {
+          const granted = await window.dataFolderService.requestPermission();
+          if (granted) {
+            if (banner) banner.style.display = 'none';
+            const res = await window.dataFolderService.readAtuFile();
+            if (res.data) {
+              if (res.data.folders && window.folderService) window.folderService.init(res.data.folders);
+              if (Array.isArray(res.data.playlists)) {
+                if (window.dataFolderService) {
+                  window.dataFolderService.originalAtuPlaylists = JSON.parse(JSON.stringify(res.data.playlists));
+                }
+              }
+            }
+            await syncDiskRecordingsToLibrary();
+            showToast('Data Folder connected & synchronized!');
+            syncToAtu(true);
+          } else {
+            showToast('Permission not granted.');
+          }
+        });
+      }
+    }
+  }
+
   // Initialize Library from IndexedDB
   async function initLibrary() {
     playlists = await fileManager.getPlaylists();
+    // Only display playlists that have at least one real live song present in the library (or just created by user in this session)
+    playlists = (playlists || []).filter(pl => {
+      const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
+      const liveCount = tids.filter(id => allTracks.some(t => t.id === id && !t.isMissing)).length;
+      return liveCount > 0 || pl.justCreated === true;
+    });
     const savedTracks = await fileManager.loadStoredTracks();
     if (savedTracks && savedTracks.length > 0) {
       allTracks = [...savedTracks];
@@ -314,15 +1070,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isCurrent = player.currentTrack && player.currentTrack.id === track.id;
     const isPlaying = isCurrent && player.isPlaying;
     const isSelected = selectedTrackIds.has(track.id);
-    const isFallback = !track.coverUrl || 
-                       track.coverUrl.includes('atsuko-no-cover-image') ||
-                       track.coverUrl.includes('Atsuko - NoCoverImg') ||
-                       track.coverUrl.includes('atsuko') ||
-                       track.coverUrl.includes('M logo') ||
-                       track.coverUrl.includes('MlogoforMusicItems') ||
-                       track.coverUrl.includes('Mlogo.png') || 
-                       track.coverUrl.includes('Group 4') || 
-                       track.coverUrl.trim() === '';
+    const isFallback = !track.coverUrl ||
+      track.coverUrl.includes('atsuko-no-cover-image') ||
+      track.coverUrl.includes('Atsuko - NoCoverImg') ||
+      track.coverUrl.includes('atsuko') ||
+      track.coverUrl.includes('M logo') ||
+      track.coverUrl.includes('MlogoforMusicItems') ||
+      track.coverUrl.includes('Mlogo.png') ||
+      track.coverUrl.includes('Group 4') ||
+      track.coverUrl.trim() === '';
     const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : track.coverUrl;
 
     return `
@@ -348,8 +1104,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Generate Playlist Card HTML (No cover images in list, matching reference design)
   function generatePlaylistCardHTML(playlist) {
-    const trackCount = playlist.trackIds ? playlist.trackIds.length : 0;
-    const countText = trackCount === 1 ? '1 Song' : `${trackCount} Songs`;
+    const liveCount = (playlist.trackIds || []).filter(id => allTracks.some(t => t.id === id && !t.isMissing)).length;
+    const countText = liveCount === 1 ? '1 Song' : `${liveCount} Songs`;
     return `
       <div class="playlist-card" data-playlist-id="${playlist.id}">
         <div class="playlist-card-left">
@@ -398,8 +1154,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Apply search filter if query is present
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(t => 
-        t.title.toLowerCase().includes(q) || 
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(q) ||
         (t.artist && t.artist.toLowerCase().includes(q)) ||
         (t.album && t.album.toLowerCase().includes(q))
       );
@@ -498,7 +1254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               renderPcLyricsView();
             }
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       pcLyricsContainer.innerHTML = `
@@ -600,8 +1356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let filtered = allTracks;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(t => 
-        t.title.toLowerCase().includes(q) || 
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(q) ||
         (t.artist && t.artist.toLowerCase().includes(q)) ||
         (t.album && t.album.toLowerCase().includes(q))
       );
@@ -638,15 +1394,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     filtered.forEach((track, idx) => {
       const isCurrent = player.currentTrack && player.currentTrack.id === track.id;
-      const isFallback = !track.coverUrl || 
-                         track.coverUrl.includes('atsuko-no-cover-image') ||
-                         track.coverUrl.includes('Atsuko - NoCoverImg') ||
-                         track.coverUrl.includes('atsuko') ||
-                         track.coverUrl.includes('M logo') ||
-                         track.coverUrl.includes('MlogoforMusicItems') ||
-                         track.coverUrl.includes('Mlogo.png') || 
-                         track.coverUrl.includes('Group 4') || 
-                         track.coverUrl.trim() === '';
+      const isFallback = !track.coverUrl ||
+        track.coverUrl.includes('atsuko-no-cover-image') ||
+        track.coverUrl.includes('Atsuko - NoCoverImg') ||
+        track.coverUrl.includes('atsuko') ||
+        track.coverUrl.includes('M logo') ||
+        track.coverUrl.includes('MlogoforMusicItems') ||
+        track.coverUrl.includes('Mlogo.png') ||
+        track.coverUrl.includes('Group 4') ||
+        track.coverUrl.trim() === '';
       const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : track.coverUrl;
       const ratio = aspectRatios[idx % aspectRatios.length];
 
@@ -726,8 +1482,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let filtered = allTracks;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(t => 
-        t.title.toLowerCase().includes(q) || 
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(q) ||
         (t.artist && t.artist.toLowerCase().includes(q)) ||
         (t.album && t.album.toLowerCase().includes(q))
       );
@@ -765,15 +1521,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     filtered.forEach((track, idx) => {
       const isCurrent = player.currentTrack && player.currentTrack.id === track.id;
-      const isFallback = !track.coverUrl || 
-                         track.coverUrl.includes('atsuko-no-cover-image') ||
-                         track.coverUrl.includes('Atsuko - NoCoverImg') ||
-                         track.coverUrl.includes('atsuko') ||
-                         track.coverUrl.includes('M logo') ||
-                         track.coverUrl.includes('MlogoforMusicItems') ||
-                         track.coverUrl.includes('Mlogo.png') || 
-                         track.coverUrl.includes('Group 4') || 
-                         track.coverUrl.trim() === '';
+      const isFallback = !track.coverUrl ||
+        track.coverUrl.includes('atsuko-no-cover-image') ||
+        track.coverUrl.includes('Atsuko - NoCoverImg') ||
+        track.coverUrl.includes('atsuko') ||
+        track.coverUrl.includes('M logo') ||
+        track.coverUrl.includes('MlogoforMusicItems') ||
+        track.coverUrl.includes('Mlogo.png') ||
+        track.coverUrl.includes('Group 4') ||
+        track.coverUrl.trim() === '';
       const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : track.coverUrl;
       const ratio = aspectRatios[idx % aspectRatios.length];
 
@@ -1438,7 +2194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.textContent = 'Column';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) filterShuffleBtn.textContent = 'Shuffle';
+    if (player) player.updatePlaybackModeUI();
 
     // Restore 4 vertical bars for All Songs
     restoreAllSongsEqualizerBars();
@@ -1602,10 +2358,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       isSearchHistoryActive = false;
       try {
         window.history.back();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     playlists = await fileManager.getPlaylists();
+    // Only display playlists that have at least one real live song present in the library (or just created by user in this session)
+    playlists = (playlists || []).filter(pl => {
+      const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
+      const liveCount = tids.filter(id => allTracks.some(t => t.id === id && !t.isMissing)).length;
+      return liveCount > 0 || pl.justCreated === true;
+    });
 
     // Synchronize navbar active states
     document.querySelectorAll('.menu-item-btn').forEach(b => b.classList.toggle('active', b.dataset.action === 'playlists'));
@@ -1624,10 +2386,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = 'none';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -1687,6 +2446,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     playlists = await fileManager.getPlaylists();
+    // Only display playlists that have at least one real live song present in the library (or just created by user in this session)
+    playlists = (playlists || []).filter(pl => {
+      const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
+      const liveCount = tids.filter(id => allTracks.some(t => t.id === id && !t.isMissing)).length;
+      return liveCount > 0 || pl.justCreated === true;
+    });
     const playlist = playlists.find(p => p.id === playlistId);
     if (!playlist) {
       renderPlaylistsView();
@@ -1724,10 +2489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = 'none';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -1737,8 +2499,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (libraryEq) libraryEq.style.display = 'flex';
     updatePlaylistSongsEqualizerBars();
 
-    // Filter songs belonging to this playlist
-    const playlistTracks = (playlist.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+    playlist.trackIds = Array.isArray(playlist.trackIds) ? playlist.trackIds : (Array.isArray(playlist.songIds) ? playlist.songIds : []);
+    playlist.songIds = playlist.trackIds;
+
+    // Filter songs belonging to this playlist, healing any mismatched IDs from .atu
+    const atuSongs = (window.dataFolderService && (window.dataFolderService.originalAtuSongs || (window.dataFolderService.cachedData && Array.isArray(window.dataFolderService.cachedData.songs) ? window.dataFolderService.cachedData.songs : []))) || [];
+    let hasHealedIds = false;
+    const playlistTracks = (playlist.trackIds || []).map(id => {
+      let t = allTracks.find(track => track.id === id);
+      if (!t && atuSongs.length > 0) {
+        const oldSong = atuSongs.find(s => s.id === id);
+        if (oldSong) {
+          t = allTracks.find(live =>
+            (live.id === oldSong.id) ||
+            (live.title && oldSong.title && live.title.toLowerCase() === oldSong.title.toLowerCase()) ||
+            (live.relativePath && oldSong.relativePath && live.relativePath.toLowerCase() === oldSong.relativePath.toLowerCase()) ||
+            (live.fileBlob && oldSong.fingerprint?.name && live.fileBlob.name.toLowerCase() === oldSong.fingerprint.name.toLowerCase()) ||
+            (live.fileBlob && oldSong.title && live.fileBlob.name.toLowerCase().includes(oldSong.title.toLowerCase())) ||
+            (live.fileBlob && oldSong.fingerprint?.size && live.fileBlob.size === oldSong.fingerprint.size)
+          );
+          if (t) {
+            const idx = playlist.trackIds.indexOf(id);
+            if (idx !== -1) {
+              playlist.trackIds[idx] = t.id;
+              hasHealedIds = true;
+            }
+          }
+        }
+      }
+      if (!t) {
+        t = allTracks.find(live =>
+          live.id === id ||
+          (live.title && live.title.toLowerCase() === String(id).toLowerCase())
+        );
+        if (t) {
+          const idx = playlist.trackIds.indexOf(id);
+          if (idx !== -1) {
+            playlist.trackIds[idx] = t.id;
+            hasHealedIds = true;
+          }
+        }
+      }
+      return t;
+    }).filter(Boolean);
+
+    if (hasHealedIds) {
+      playlist.songIds = playlist.trackIds;
+      fileManager.savePlaylist(playlist);
+      syncToAtu();
+    }
 
     // Mode 2: Lyrics View
     if (currentPlaylistSongsMode === 2) {
@@ -1894,7 +2703,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       isSearchHistoryActive = false;
       try {
         window.history.back();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Close mobile full player if open
@@ -2053,7 +2862,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Ensure async profile data from IndexedDB is loaded & applied
     if (typeof initUserProfile === 'function') {
-      initUserProfile().catch(() => {});
+      initUserProfile().catch(() => { });
     }
 
     // Home view selector dropdown
@@ -2407,7 +3216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isDark = (document.body.getAttribute('data-theme') || currentTheme) === 'dark';
     const dotsIconSrc = isDark ? 'assets/Dark Mode/DarkModeOptionsbtn.svg' : 'assets/OptionsThreeDots.svg';
 
-    const recordings = await fileManager.getRecordings();
+    const recordings = await getAppRecordings();
     const recent4 = (recordings || []).slice(0, 4);
 
     layout.innerHTML = `
@@ -2437,8 +3246,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ` : recent4.map((rec, idx) => `
           <div class="home-recording-row" data-id="${rec.id}">
             <div class="home-recording-info">
-              <span class="home-recording-name">Rec. ${idx + 1} — ${escapeHtml(rec.name || 'Voice Note')}</span>
-              <span class="home-recording-meta">${escapeHtml(rec.date || 'Recent')} • ${escapeHtml(rec.duration || '0:00')}</span>
+              <span class="home-recording-name">Rec. ${idx + 1} — ${escapeHtml(rec.title || rec.name || 'Voice Note')}</span>
+              <span class="home-recording-meta">${escapeHtml(rec.date || 'Recent')} • ${escapeHtml(rec.formattedDuration || rec.duration || '0:00')}</span>
             </div>
             <button class="home-recording-options-btn" data-id="${rec.id}" title="Options" aria-label="Options">
               <img src="${dotsIconSrc}" alt="Options" />
@@ -2530,7 +3339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       isSearchHistoryActive = false;
       try {
         window.history.back();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Synchronize navbar active states
@@ -2795,10 +3604,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = 'none';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -2930,15 +3736,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     uniqueArtists.forEach((artist, idx) => {
       const isCurrent = player.currentTrack && (player.currentTrack.artist || 'Unknown').trim().toLowerCase() === artist.name.trim().toLowerCase();
-      const isFallback = !artist.coverUrl || 
-                         artist.coverUrl.includes('atsuko-no-cover-image') ||
-                         artist.coverUrl.includes('Atsuko - NoCoverImg') ||
-                         artist.coverUrl.includes('atsuko') ||
-                         artist.coverUrl.includes('M logo') ||
-                         artist.coverUrl.includes('MlogoforMusicItems') ||
-                         artist.coverUrl.includes('Mlogo.png') || 
-                         artist.coverUrl.includes('Group 4') || 
-                         artist.coverUrl.trim() === '';
+      const isFallback = !artist.coverUrl ||
+        artist.coverUrl.includes('atsuko-no-cover-image') ||
+        artist.coverUrl.includes('Atsuko - NoCoverImg') ||
+        artist.coverUrl.includes('atsuko') ||
+        artist.coverUrl.includes('M logo') ||
+        artist.coverUrl.includes('MlogoforMusicItems') ||
+        artist.coverUrl.includes('Mlogo.png') ||
+        artist.coverUrl.includes('Group 4') ||
+        artist.coverUrl.trim() === '';
       const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : artist.coverUrl;
       const ratio = aspectRatios[idx % aspectRatios.length];
 
@@ -3016,7 +3822,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = '';
       filterColumnBtn.textContent = 'Artist';
     }
-    if (filterShuffleBtn) filterShuffleBtn.textContent = 'Shuffle';
+    if (player) player.updatePlaybackModeUI();
 
     const libraryHeading = document.querySelector('.library-heading');
     if (libraryHeading) libraryHeading.textContent = 'Artist';
@@ -3106,9 +3912,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -3240,15 +4044,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       artistSongs.forEach((track, idx) => {
         const isCurrent = player.currentTrack && track.id === player.currentTrack.id;
-        const isFallback = !track.coverUrl || 
-                           track.coverUrl.includes('atsuko-no-cover-image') ||
-                           track.coverUrl.includes('Atsuko - NoCoverImg') ||
-                           track.coverUrl.includes('atsuko') ||
-                           track.coverUrl.includes('M logo') ||
-                           track.coverUrl.includes('MlogoforMusicItems') ||
-                           track.coverUrl.includes('Mlogo.png') || 
-                           track.coverUrl.includes('Group 4') || 
-                           track.coverUrl.trim() === '';
+        const isFallback = !track.coverUrl ||
+          track.coverUrl.includes('atsuko-no-cover-image') ||
+          track.coverUrl.includes('Atsuko - NoCoverImg') ||
+          track.coverUrl.includes('atsuko') ||
+          track.coverUrl.includes('M logo') ||
+          track.coverUrl.includes('MlogoforMusicItems') ||
+          track.coverUrl.includes('Mlogo.png') ||
+          track.coverUrl.includes('Group 4') ||
+          track.coverUrl.trim() === '';
         const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : track.coverUrl;
         const ratio = aspectRatios[idx % aspectRatios.length];
 
@@ -3516,10 +4320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = 'none';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -3769,9 +4570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -4032,9 +4831,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -4249,9 +5046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -4440,18 +5235,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   // =========================================================================
 
   function getFoldersList() {
-    // Initial folder: All Songs contains all library tracks
-    const allSongsPlayCount = allTracks.reduce((sum, t) => sum + (t.playCount || 0), 0);
-    const folders = [
-      {
+    const rawFolders = window.folderService ? window.folderService.getAllFolders() : [];
+    const list = rawFolders.map(f => {
+      const tracks = window.folderService.getSongsInFolder(f.id, allTracks);
+      const playCount = tracks.reduce((sum, t) => sum + (t.playCount || 0), 0);
+      return {
+        id: f.id,
+        name: f.name,
+        isSystem: false,
+        tracks: tracks,
+        playCount: playCount
+      };
+    });
+
+    const unsortedTracks = window.folderService ? window.folderService.getUnsortedSongs(allTracks) : [];
+    if (unsortedTracks.length > 0) {
+      list.push({
+        id: 'unsorted',
+        name: 'Unsorted',
+        isSystem: true,
+        tracks: unsortedTracks,
+        playCount: unsortedTracks.reduce((sum, t) => sum + (t.playCount || 0), 0)
+      });
+    }
+
+    if (list.length === 0) {
+      const allSongsPlayCount = allTracks.reduce((sum, t) => sum + (t.playCount || 0), 0);
+      list.push({
         id: 'all_songs',
         name: 'All Songs',
         isSystem: true,
         tracks: allTracks,
         playCount: allSongsPlayCount
-      }
-    ];
-    return folders;
+      });
+    }
+
+    return list;
   }
 
   function getTopFolders(count = 2) {
@@ -4462,7 +5281,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getFolderTopSongs(folderName, count = 2) {
     const folders = getFoldersList();
-    const folder = folders.find(f => f.name.toLowerCase() === (folderName || '').toLowerCase()) || folders[0];
+    const folder = folders.find(f => f.id === folderName || f.name.toLowerCase() === (folderName || '').toLowerCase()) || folders[0];
     const songs = [...(folder ? folder.tracks : allTracks)];
     songs.sort((a, b) => (b.playCount || 0) - (a.playCount || 0));
     return songs.slice(0, count);
@@ -4501,7 +5320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     const folders = getFoldersList();
-    const folder = folders.find(f => f.name.toLowerCase() === (folderName || '').toLowerCase()) || folders[0];
+    const folder = folders.find(f => f.id === folderName || f.name.toLowerCase() === (folderName || '').toLowerCase()) || folders[0];
     const tracks = folder ? folder.tracks : allTracks;
     const availableCovers = tracks.filter(t => t.coverUrl && !t.coverUrl.includes('M logo')).map(t => t.coverUrl);
     const shuffledCovers = [...availableCovers].sort(() => 0.5 - Math.random());
@@ -4553,23 +5372,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Header label
     updateViewSelectorLabel('Explore / Library');
 
-    // Header Back Button in right pane: ← Library
+    // Header in right pane: ← Library + New Folder
     const libraryHeading = document.querySelector('.library-heading');
     if (libraryHeading) {
       libraryHeading.innerHTML = `
-        <button class="playlist-back-btn" id="foldersBackBtn" title="Back to Library">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          Library
-        </button>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <button class="playlist-back-btn" id="foldersBackBtn" title="Back to Library">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Library
+          </button>
+          <button class="welcome-btn-primary" id="foldersCreateNewBtn" style="padding: 6px 14px; font-size: 13px;">
+            + New Folder
+          </button>
+        </div>
       `;
       const backBtn = document.getElementById('foldersBackBtn');
       if (backBtn) {
         backBtn.onclick = (e) => {
           e.stopPropagation();
           renderExploreView();
+        };
+      }
+      const newFolderBtn = document.getElementById('foldersCreateNewBtn');
+      if (newFolderBtn) {
+        newFolderBtn.onclick = (e) => {
+          e.stopPropagation();
+          const name = prompt('Enter folder name:', window.folderService ? window.folderService.getDateSuggestion() : '');
+          if (name && name.trim()) {
+            const res = window.folderService.createFolder(name.trim());
+            if (res.success) {
+              showToast(`Created folder "${res.folder.name}"`);
+              renderFoldersGridView();
+              syncToAtu();
+            } else {
+              showToast(res.error);
+            }
+          }
         };
       }
     }
@@ -4591,10 +5432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterColumnBtn.style.display = 'none';
       filterColumnBtn.classList.remove('active');
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -4616,12 +5454,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderFoldersGridView() {
     if (!songsListContainer) return;
-    songsListContainer.style.display = 'flex';
-    const hasMini = Boolean(player && player.currentTrack && window.innerWidth > 900);
-    songsListContainer.className = `songs-list folders-grid ${hasMini ? 'has-mini-player' : ''}`;
 
     const folders = getFoldersList();
     if (folders.length === 0) {
+      songsListContainer.style.display = 'flex';
       songsListContainer.className = 'songs-list empty-container';
       songsListContainer.innerHTML = `
         <div class="empty-state">
@@ -4631,6 +5467,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
       return;
     }
+
+    songsListContainer.style.display = 'grid';
+    const hasMini = Boolean(player && player.currentTrack && window.innerWidth > 900);
+    songsListContainer.className = `songs-list folders-grid ${hasMini ? 'has-mini-player' : ''}`;
 
     const isDark = (document.body.getAttribute('data-theme') || currentTheme) === 'dark';
     const dotsIconSrc = isDark ? 'assets/Dark Mode/DarkModeOptionsbtn.svg' : 'assets/OptionsThreeDots.svg';
@@ -4715,15 +5555,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
           showToast('Folder has no songs');
         }
+      } else if (action === 'rename-folder') {
+        if (folder && folder.isSystem) {
+          showToast('System folders cannot be renamed');
+        } else {
+          const newName = prompt('Enter new folder name:', folder.name);
+          if (newName && newName.trim() && newName.trim() !== folder.name) {
+            const res = window.folderService.renameFolder(folder.id, newName.trim());
+            if (res.success) {
+              showToast(`Renamed to ${res.folder.name}`);
+              renderFoldersGridView();
+              populateFavFolders();
+              syncToAtu(true);
+            } else {
+              showToast(res.error);
+            }
+          }
+        }
+      } else if (action === 'add-songs-folder') {
+        handleAddSongsToSpecificFolder(folder.name);
       } else if (action === 'delete-folder') {
         if (folder && folder.isSystem) {
-          showToast('All Songs is a protected system folder and cannot be deleted');
+          showToast('System folders cannot be deleted');
         } else {
-          showToast('Folder deleted');
+          if (confirm(`Delete folder "${folder.name}"?\nSongs will remain in All Songs under Unsorted.`)) {
+            window.folderService.deleteFolder(folder.id, allTracks);
+            showToast(`Deleted folder "${folder.name}"`);
+            renderFoldersGridView();
+            populateFavFolders();
+            syncToAtu(true);
+          }
         }
       }
       folderContextMenu.classList.remove('open');
     });
+  }
+
+  function handleAddSongsToSpecificFolder(targetFolderName) {
+    openAddMusicModal(targetFolderName);
   }
 
   function renderFolderDetailView(folderName = 'All Songs') {
@@ -4731,23 +5600,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectedFolderName = folderName;
     activePlaylistId = null;
 
-    // Header Back Button in right pane: ← Folders
+    // Header Back Button & Add Songs in right pane: ← Folders
     const libraryHeading = document.querySelector('.library-heading');
     if (libraryHeading) {
       libraryHeading.innerHTML = `
-        <button class="playlist-back-btn" id="folderDetailBackBtn" title="Back to Folders">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          Folders
-        </button>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <button class="playlist-back-btn" id="folderDetailBackBtn" title="Back to Folders">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Folders
+          </button>
+          <button class="welcome-btn-primary" id="folderDetailAddSongsBtn" style="padding: 6px 14px; font-size: 13px;">
+            + Add Songs to this Folder
+          </button>
+        </div>
       `;
       const backBtn = document.getElementById('folderDetailBackBtn');
       if (backBtn) {
         backBtn.onclick = (e) => {
           e.stopPropagation();
           renderFoldersMainView();
+        };
+      }
+      const addSongsBtn = document.getElementById('folderDetailAddSongsBtn');
+      if (addSongsBtn) {
+        addSongsBtn.onclick = (e) => {
+          e.stopPropagation();
+          handleAddSongsToSpecificFolder(folderName);
         };
       }
     }
@@ -4768,9 +5649,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -4782,7 +5661,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Populate Left Pane graphics & Fav songs
     const folders = getFoldersList();
-    const folder = folders.find(f => f.name.toLowerCase() === folderName.toLowerCase()) || folders[0];
+    const folder = folders.find(f => f.id === folderName || f.name.toLowerCase() === (folderName || '').toLowerCase()) || folders[0];
+    if (folder) selectedFolderName = folder.name;
     const folderTracks = folder ? folder.tracks : allTracks;
     const hasSongs = folderTracks.length > 0;
 
@@ -4936,13 +5816,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    songsListContainer.innerHTML = folderTracks.map(track => {
-      const isCurrent = player.currentTrack && track.id === player.currentTrack.id;
-      const isSelected = selectedTrackIds.has(track.id);
-      return renderSongItemHTML(track, isCurrent, isSelected);
-    }).join('');
+    songsListContainer.innerHTML = folderTracks.map((track, idx) => generateSongCardHTML(track, idx)).join('');
 
-    attachSongItemEventListeners(songsListContainer, folderTracks);
+    songsListContainer.querySelectorAll('.song-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.song-options-btn') || e.target.closest('.song-checkbox-wrapper')) return;
+        const trackId = card.dataset.id;
+        const idx = folderTracks.findIndex(t => t.id === trackId);
+        if (idx !== -1) {
+          player.setQueue(folderTracks, idx, true);
+          player.updateNowPlayingUI();
+        }
+      });
+    });
   }
 
   // =========================================================================
@@ -5021,7 +5907,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Calculate collision-free sequential recording file name: Recording 1.mp3, Recording 2.mp3, etc.
   async function getNextRecordingFileName() {
-    const recordings = await fileManager.getRecordings();
+    const recordings = await getAppRecordings();
     let maxNumber = 0;
     recordings.forEach(r => {
       const match = (r.title || '').match(/(?:Recording|Rec\.?)\s*(\d+)/i);
@@ -5048,93 +5934,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isRecordingAudio) return;
 
     try {
-      // 1. Request microphone access
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showToast('Microphone access is not supported on this browser.');
-        return;
+      if (window.dataFolderService && !window.dataFolderService.dirHandle) {
+        showToast('Please connect your Atsuko Data Folder before recording.');
+        const picked = await window.onboardingWizard.pickDataFolder();
+        if (!picked) return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioRecordStream = stream;
+      await window.recorderService.start();
 
-      // 2. Determine best supported audio format
-      let mimeType = 'audio/webm;codecs=opus';
-      if (typeof MediaRecorder !== 'undefined') {
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-          else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) mimeType = 'audio/ogg;codecs=opus';
-          else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-          else mimeType = '';
-        }
-      }
-
-      recordedAudioChunks = [];
-      audioMediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordingStartTime = Date.now();
-
-      audioMediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          recordedAudioChunks.push(event.data);
-        }
-      };
-
-      audioMediaRecorder.onstop = async () => {
-        const recordingDuration = Math.max(1, Math.round((Date.now() - recordingStartTime) / 1000));
-        const audioBlob = new Blob(recordedAudioChunks, { type: audioMediaRecorder.mimeType || 'audio/webm' });
-        
-        // Stop all audio tracks
-        if (audioRecordStream) {
-          audioRecordStream.getTracks().forEach(track => track.stop());
-          audioRecordStream = null;
-        }
-
-        const { fileName, title } = await getNextRecordingFileName();
-        const dateStr = formatRecordingDate(new Date());
-
-        // Attempt to save to local folder if handle is available
-        let savedToDisk = false;
-        try {
-          const dirHandle = await getRecordingDirectoryHandle(false);
-          if (dirHandle) {
-            const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(audioBlob);
-            await writable.close();
-            savedToDisk = true;
-          }
-        } catch (err) {
-          console.warn('Could not write recording directly to folder handle:', err);
-        }
-
-        // Create Musico track & recording record
-        const recordId = 'rec_' + Date.now();
-        const recordingObj = {
-          id: recordId,
-          title: title,
-          artist: 'Voice Recording',
-          album: 'Recordings',
-          duration: recordingDuration,
-          date: dateStr,
-          timestamp: Date.now(),
-          fileName: fileName,
-          fileBlob: audioBlob,
-          isRecording: true
-        };
-
-        await fileManager.saveRecording(recordingObj);
-        await fileManager.saveTrack(recordingObj);
-
-        // Add to active library
-        allTracks.unshift(recordingObj);
-
-        showToast(`Saved ${title} (${savedToDisk ? 'Folder & Library' : 'Library'})`);
-
-        if (currentView === 'recorder') {
-          renderRecorderView();
-        }
-      };
-
-      // 3. Update UI to recording state
       isRecordingAudio = true;
       const widget = document.getElementById('recorderGraphicWidget');
       if (widget) widget.classList.add('is-recording');
@@ -5162,11 +5969,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }, 500);
 
-      audioMediaRecorder.start(250);
-      showToast('Recording started...');
+      showToast('Recording started (MP3)...');
     } catch (err) {
       console.warn('Microphone start error:', err);
-      showToast(err.name === 'NotAllowedError' ? 'Microphone permission denied.' : 'Could not access microphone.');
+      showToast(err.message || 'Could not start recording.');
       stopAudioRecordingUI();
     }
   }
@@ -5198,11 +6004,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function stopAudioRecording() {
+  async function stopAudioRecording() {
     if (!isRecordingAudio) return;
     stopAudioRecordingUI();
-    if (audioMediaRecorder && audioMediaRecorder.state !== 'inactive') {
-      audioMediaRecorder.stop();
+    showToast('Encoding MP3 recording...');
+
+    try {
+      const res = await window.recorderService.stop();
+      if (!res || !res.mp3Blob) return;
+
+      const defaultName = window.recorderService.getDefaultRecordingName();
+      const customName = prompt('Enter recording name:', defaultName) || defaultName;
+
+      const saved = await window.recorderService.saveRecording(res.mp3Blob, customName, res.durationSec);
+      if (saved && saved.song) {
+        await syncDiskRecordingsToLibrary();
+        showToast(`Saved ${saved.fileName} (${saved.song.formattedDuration})`);
+
+        if (currentView === 'recorder') {
+          renderRecorderView();
+        }
+      }
+    } catch (err) {
+      console.warn('Error saving recording:', err);
+      showToast(err.message || 'Error saving recording.');
     }
   }
 
@@ -5239,6 +6064,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectedFolderName = null;
     selectedGenre = null;
     activePlaylistId = null;
+
+    // Refresh disk recordings into library
+    await syncDiskRecordingsToLibrary();
 
     // Synchronize navbar active states
     document.querySelectorAll('.menu-item-btn').forEach(b => b.classList.remove('active'));
@@ -5279,10 +6107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) {
       filterColumnBtn.style.display = 'none';
     }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+    if (player) player.updatePlaybackModeUI();
 
     const exploreRightNav = document.getElementById('exploreRightNav');
     if (exploreRightNav) exploreRightNav.style.display = 'none';
@@ -5309,16 +6134,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hasMini = Boolean(player && player.currentTrack && window.innerWidth > 900);
     songsListContainer.className = `songs-list recorder-list-mode ${hasMini ? 'has-mini-player' : ''}`;
 
-    const recordings = await fileManager.getRecordings();
-    const savedHandle = await fileManager.getSetting('recorder_directory_handle');
+    const recordings = await getAppRecordings();
+    const hasFolder = Boolean(window.dataFolderService && window.dataFolderService.dirHandle);
 
     let folderBannerHTML = '';
-    if (!savedHandle && 'showDirectoryPicker' in window) {
+    if (!hasFolder && 'showDirectoryPicker' in window) {
       folderBannerHTML = `
         <div class="recorder-folder-banner" id="recorderFolderBanner">
           <div class="recorder-folder-banner-text">
             <h4>Save recordings locally</h4>
-            <p>Choose a folder on your PC where audio files will be automatically saved.</p>
+            <p>Choose an Atsuko Data Folder on your PC where audio files will be automatically saved.</p>
           </div>
           <button class="recorder-choose-folder-btn" id="recorderChooseFolderBtn">Choose Folder</button>
         </div>
@@ -5335,7 +6160,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
       const chooseBtn = document.getElementById('recorderChooseFolderBtn');
       if (chooseBtn) {
-        chooseBtn.addEventListener('click', selectRecordingFolder);
+        chooseBtn.addEventListener('click', async () => {
+          if (window.onboardingWizard) {
+            await window.onboardingWizard.pickDataFolder();
+            await syncDiskRecordingsToLibrary();
+            renderRecorderListView();
+          }
+        });
       }
       return;
     }
@@ -5364,7 +6195,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const chooseBtn = document.getElementById('recorderChooseFolderBtn');
     if (chooseBtn) {
-      chooseBtn.addEventListener('click', selectRecordingFolder);
+      chooseBtn.addEventListener('click', async () => {
+        if (window.onboardingWizard) {
+          await window.onboardingWizard.pickDataFolder();
+          await syncDiskRecordingsToLibrary();
+          renderRecorderListView();
+        }
+      });
     }
 
     songsListContainer.querySelectorAll('.recording-list-card').forEach(card => {
@@ -5394,7 +6231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hasMini = Boolean(player && player.currentTrack && window.innerWidth > 900);
     songsListContainer.className = `songs-list recorder-grid-mode ${hasMini ? 'has-mini-player' : ''}`;
 
-    const recordings = await fileManager.getRecordings();
+    const recordings = await getAppRecordings();
 
     if (recordings.length === 0) {
       songsListContainer.style.display = 'flex';
@@ -5475,7 +6312,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!item) return;
       const action = item.dataset.action;
       const recId = activeRecordingContextMenuId;
-      const recordings = await fileManager.getRecordings();
+      const recordings = await getAppRecordings();
       const rec = recordings.find(r => r.id === recId);
 
       if (action === 'play-recording') {
@@ -5486,10 +6323,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } else if (action === 'delete-recording') {
         if (rec && confirm(`Delete "${rec.title}"?`)) {
+          if (rec.fileName && window.dataFolderService) {
+            const folder = await window.dataFolderService.getRecordingsFolder(false);
+            if (folder) {
+              try {
+                await folder.removeEntry(rec.fileName);
+              } catch (e) {
+                console.warn('Could not remove file from disk:', e);
+              }
+            }
+          }
           await fileManager.deleteRecording(recId);
           await fileManager.deleteTrackFromDB(recId);
-          allTracks = allTracks.filter(t => t.id !== recId);
-          if (player.currentTrack && player.currentTrack.id === recId) {
+          allTracks = allTracks.filter(t => t.id !== recId && t.title !== rec.title);
+          if (player.currentTrack && (player.currentTrack.id === recId || player.currentTrack.title === rec.title)) {
             player.stop();
           }
           showToast(`Deleted ${rec.title}`);
@@ -5779,73 +6626,655 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 3000);
   }
 
-  // Handle Adding Music folder or files from local storage (Non-destructive combined library)
-  async function handleAddMusic() {
-    try {
-      let initialRendered = false;
+  // Universal Add Music Controller (PRD Section 5.3 & 6.2)
+  let pendingFilesToAdd = [];
+  let pendingPreselectedFolderName = null;
 
-      const newTracks = await fileManager.selectDirectory({
-        onScanStart: () => {
-          showLoadingProgress(0, 0);
-        },
-        onInitialTracksReady: (initialBatch) => {
-          if (initialBatch && initialBatch.length > 0) {
-            // MERGE with existing without wiping previous tracks
-            const existingIds = new Set(allTracks.map(t => t.id));
-            const existingKeys = new Set(allTracks.map(t => `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`));
-            const uniqueBatch = initialBatch.filter(t => {
-              const key = `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`;
-              return !existingIds.has(t.id) && !existingKeys.has(key);
+  function openAddMusicModal(preselectedFolderName = null) {
+    initAddMusicModalListeners();
+    initMoveToFolderModalListeners();
+    const modal = document.getElementById('addMusicModal');
+    if (!modal) return;
+
+    pendingPreselectedFolderName = preselectedFolderName;
+    pendingFilesToAdd = [];
+
+    const titleEl = document.getElementById('addMusicModalTitle');
+    if (titleEl) {
+      titleEl.textContent = preselectedFolderName ? `Add Songs to "${preselectedFolderName}"` : 'Add Music to Atsuko';
+    }
+
+    const needsFolderStep = document.getElementById('addMusicNeedsFolderStep');
+    const optionsStep = document.getElementById('addMusicOptionsStep');
+    const folderAssignStep = document.getElementById('addMusicFolderAssignStep');
+
+    const isConnected = window.dataFolderService && Boolean(window.dataFolderService.dirHandle);
+
+    if (!isConnected) {
+      if (needsFolderStep) needsFolderStep.style.display = 'block';
+      if (optionsStep) optionsStep.style.display = 'none';
+      if (folderAssignStep) folderAssignStep.style.display = 'none';
+    } else {
+      if (needsFolderStep) needsFolderStep.style.display = 'none';
+      if (optionsStep) optionsStep.style.display = 'block';
+      if (folderAssignStep) folderAssignStep.style.display = 'none';
+    }
+
+    modal.style.display = 'flex';
+    modal.classList.add('open');
+  }
+
+  function closeAddMusicModal() {
+    const modal = document.getElementById('addMusicModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.style.display = 'none';
+    }
+    pendingFilesToAdd = [];
+    pendingPreselectedFolderName = null;
+  }
+
+  function initAddMusicModalListeners() {
+    const modal = document.getElementById('addMusicModal');
+    if (!modal || modal._initialized) return;
+    modal._initialized = true;
+
+    const closeBtn = document.getElementById('closeAddMusicModalBtn');
+    if (closeBtn) closeBtn.onclick = closeAddMusicModal;
+
+    const cancelAssignBtn = document.getElementById('addMusicCancelAssignBtn');
+    if (cancelAssignBtn) cancelAssignBtn.onclick = closeAddMusicModal;
+
+    modal.onclick = (e) => {
+      if (e.target === modal) closeAddMusicModal();
+    };
+
+    const pickDataBtn = document.getElementById('addMusicPickDataFolderBtn');
+    if (pickDataBtn) {
+      pickDataBtn.onclick = async () => {
+        const res = await window.onboardingWizard.pickDataFolder();
+        if (res) {
+          if (res.type === 'restore') {
+            closeAddMusicModal();
+            await handleRestoreReturningUser(res.data);
+          } else {
+            const needsFolderStep = document.getElementById('addMusicNeedsFolderStep');
+            const optionsStep = document.getElementById('addMusicOptionsStep');
+            if (needsFolderStep) needsFolderStep.style.display = 'none';
+            if (optionsStep) optionsStep.style.display = 'block';
+          }
+        }
+      };
+    }
+
+    const pickFilesBtn = document.getElementById('addMusicPickFilesBtn');
+    if (pickFilesBtn) {
+      pickFilesBtn.onclick = async () => {
+        try {
+          let files = [];
+          if ('showOpenFilePicker' in window) {
+            const handles = await window.showOpenFilePicker({
+              multiple: true,
+              types: [{
+                description: 'Audio Files (*.mp3, *.wav, *.flac, *.m4a, *.aac, *.ogg, *.opus)',
+                accept: {
+                  'audio/*': ['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.weba', '.webm', '.m4b', '.mpga'],
+                  'audio/mpeg': ['.mp3', '.mpga'],
+                  'audio/mp3': ['.mp3']
+                }
+              }]
             });
-            allTracks = [...allTracks, ...uniqueBatch];
-            FileManager.sortTracks(allTracks);
-            if (currentView === 'all_songs') {
-              renderSongList();
+            if (handles && handles.length > 0) {
+              files = await Promise.all(handles.map(h => h.getFile()));
             }
-            initialRendered = true;
-
-            // Prepare first track if queue is empty
-            if (!player.currentTrack && allTracks.length > 0) {
-              player.setQueue(allTracks, 0, false);
-            }
+          } else {
+            files = await new Promise(resolve => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.multiple = true;
+              input.accept = 'audio/*';
+              input.onchange = (e) => resolve(Array.from(e.target.files || []));
+              input.click();
+            });
           }
-        },
-        onProgress: ({ processed, total, remaining, percent }) => {
-          showLoadingProgress(remaining, percent);
-        },
-        onBatchMetadataUpdated: (updatedChunk) => {
-          updateVisibleSongCardMetadata(updatedChunk);
-          if (player.currentTrack && updatedChunk.some(t => t.id === player.currentTrack.id)) {
-            player.updateNowPlayingUI();
+
+          const validFiles = (files || []).filter(f => FileManager.isAudioFile(f));
+          if (validFiles.length === 0) return;
+
+          handleSelectedAudioFiles(validFiles);
+        } catch (e) {
+          if (e.name !== 'AbortError') console.warn(e);
+        }
+      };
+    }
+
+    const pickFolderBtn = document.getElementById('addMusicPickFolderBtn');
+    if (pickFolderBtn) {
+      pickFolderBtn.onclick = async () => {
+        try {
+          if (!('showDirectoryPicker' in window)) {
+            alert('Folder selection is supported on desktop Chrome and Edge browsers.');
+            return;
           }
-        }
-      });
+          const dirHandle = await window.showDirectoryPicker();
+          if (!dirHandle) return;
 
-      hideLoadingProgress();
+          const fileList = [];
+          await fileManager.scanDirectoryHandle(dirHandle, fileList);
+          const validFiles = fileList.filter(f => FileManager.isAudioFile(f));
+          if (validFiles.length === 0) {
+            showToast('No audio files found in selected folder.');
+            return;
+          }
 
-      if (!initialRendered && newTracks && newTracks.length > 0) {
-        const existingIds = new Set(allTracks.map(t => t.id));
-        const existingKeys = new Set(allTracks.map(t => `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`));
-        const uniqueNew = newTracks.filter(t => {
-          const key = `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`;
-          return !existingIds.has(t.id) && !existingKeys.has(key);
-        });
-        allTracks = [...allTracks, ...uniqueNew];
-        FileManager.sortTracks(allTracks);
-        if (currentView === 'all_songs') {
-          renderSongList();
+          handleSelectedAudioFiles(validFiles);
+        } catch (e) {
+          if (e.name !== 'AbortError') console.warn(e);
         }
-        if (!player.currentTrack && allTracks.length > 0) {
-          player.setQueue(allTracks, 0, false);
+      };
+    }
+
+    const confirmAssignBtn = document.getElementById('addMusicConfirmAssignBtn');
+    if (confirmAssignBtn) {
+      confirmAssignBtn.onclick = async () => {
+        const input = document.getElementById('addMusicFolderNameInput');
+        const select = document.getElementById('addMusicExistingFolderSelect');
+        let folderName = (input && input.value ? input.value : '').trim();
+        if (!folderName && select && select.value) {
+          const sf = window.folderService.getFolderById(select.value);
+          if (sf) folderName = sf.name;
+        }
+        if (!folderName) {
+          folderName = window.folderService ? window.folderService.getDateSuggestion() : 'Music';
+        }
+
+        if (folderName.toLowerCase() === 'recordings') {
+          showToast('The "Recordings" folder is reserved for voice recordings.');
+          folderName = window.folderService ? window.folderService.getDateSuggestion() : 'Music';
+        }
+
+        let folder = window.folderService.getFolderByName(folderName);
+        if (!folder) {
+          const cr = window.folderService.createFolder(folderName);
+          folder = cr.folder;
+        }
+        if (!folder) return;
+
+        const filesToImport = (pendingFilesToAdd && pendingFilesToAdd.length > 0) ? [...pendingFilesToAdd] : [];
+        closeAddMusicModal();
+        if (filesToImport.length > 0) {
+          await executeImportSongs(filesToImport, folder);
+        }
+      };
+    }
+
+    const folderInput = document.getElementById('addMusicFolderNameInput');
+    if (folderInput && confirmAssignBtn) {
+      folderInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          confirmAssignBtn.click();
+        }
+      };
+    }
+  }
+
+  function handleSelectedAudioFiles(validFiles) {
+    if (pendingPreselectedFolderName) {
+      let folder = window.folderService.getFolderByName(pendingPreselectedFolderName);
+      if (!folder) {
+        const cr = window.folderService.createFolder(pendingPreselectedFolderName);
+        folder = cr.folder;
+      }
+      closeAddMusicModal();
+      if (folder) executeImportSongs(validFiles, folder);
+      return;
+    }
+
+    pendingFilesToAdd = validFiles;
+    const optionsStep = document.getElementById('addMusicOptionsStep');
+    const folderAssignStep = document.getElementById('addMusicFolderAssignStep');
+    const countSpan = document.getElementById('addMusicCountSpan');
+    const input = document.getElementById('addMusicFolderNameInput');
+    const select = document.getElementById('addMusicExistingFolderSelect');
+
+    if (countSpan) countSpan.textContent = validFiles.length;
+    if (input) input.value = window.folderService ? window.folderService.getDateSuggestion() : '';
+
+    if (select) {
+      const existing = window.folderService ? window.folderService.getAllFolders() : [];
+      select.innerHTML = '<option value="">-- Choose an existing folder --</option>' +
+        existing.filter(f => f.name.toLowerCase() !== 'recordings').map(f => `<option value="${f.id}">${escapeHtml(f.name)} (${(f.songIds || []).length} songs)</option>`).join('');
+      select.value = '';
+      select.onchange = () => {
+        if (select.value) {
+          const f = window.folderService.getFolderById(select.value);
+          if (f && input) input.value = f.name;
+        }
+      };
+    }
+
+    if (optionsStep) optionsStep.style.display = 'none';
+    if (folderAssignStep) folderAssignStep.style.display = 'block';
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+
+  async function executeImportSongs(validFiles, folder) {
+    if (!validFiles || validFiles.length === 0) return;
+    showLoadingProgress(0, 0);
+
+    try {
+      // Deduplicate incoming files by name and size
+      const uniqueFiles = [];
+      const seenFileKeys = new Set();
+      for (const f of validFiles) {
+        const key = `${f.name}_${f.size}`;
+        if (!seenFileKeys.has(key)) {
+          seenFileKeys.add(key);
+          uniqueFiles.push(f);
         }
       }
 
-      if (newTracks && newTracks.length > 0) {
-        showToast(`Imported ${newTracks.length} song${newTracks.length > 1 ? 's' : ''}!`);
+      // Check if files are already in target folder
+      const filesToImport = [];
+      for (const file of uniqueFiles) {
+        const alreadyInTargetFolder = allTracks.some(t => {
+          if (t.isMissing) return false;
+          if (folder && folder.id && t.folderId !== folder.id) return false;
+          const sName = (t.relativePath || t.fileBlob?.name || t.fingerprint?.name || t.title || '').split(/[\/\\]/).pop().trim().toLowerCase();
+          const fName = (file.name || '').trim().toLowerCase();
+          const sSize = t.fileBlob?.size || t.fingerprint?.size || 0;
+          return (sName === fName && sSize > 0 && sSize === file.size);
+        });
+        if (!alreadyInTargetFolder) {
+          filesToImport.push(file);
+        }
+      }
+
+      if (filesToImport.length === 0) {
+        showToast('All selected songs are already in this folder.');
+        return;
+      }
+
+      // 1. Gather all potential existing song records from allTracks and cached .atu songs
+      const existingSongsPool = [];
+      const seenIds = new Set();
+      for (const t of allTracks) {
+        if (!seenIds.has(t.id)) {
+          existingSongsPool.push(t);
+          seenIds.add(t.id);
+        }
+      }
+      const atuSongsSource = (window.dataFolderService && (
+        (Array.isArray(window.dataFolderService.originalAtuSongs) && window.dataFolderService.originalAtuSongs.length > 0)
+          ? window.dataFolderService.originalAtuSongs
+          : (window.dataFolderService.cachedData?.songs || [])
+      )) || [];
+      for (const s of atuSongsSource) {
+        if (!seenIds.has(s.id)) {
+          existingSongsPool.push({
+            ...s,
+            isMissing: true,
+            coverUrl: 'assets/atsuko-no-cover-image.svg'
+          });
+          seenIds.add(s.id);
+        }
+      }
+
+      const matchedTracks = [];
+      const unmatchedFiles = [];
+      const usedRecordIds = new Set();
+
+      // 2. Smart match each incoming file against existing song records
+      for (let i = 0; i < filesToImport.length; i++) {
+        const file = filesToImport[i];
+        const matchedRecord = findMatchingSongRecord(file, existingSongsPool, usedRecordIds);
+
+        if (matchedRecord) {
+          usedRecordIds.add(matchedRecord.id);
+          // Reconnect song record with live file reference
+          matchedRecord.fileBlob = file;
+          matchedRecord.isMissing = false;
+          matchedRecord.audioUrl = null;
+          if (folder && folder.id) {
+            matchedRecord.folderId = folder.id;
+          }
+
+          // Restore favourite status if was favourite
+          if (matchedRecord.favourite) {
+            let favs = getFavouriteTrackIds();
+            if (!favs.includes(matchedRecord.id)) {
+              favs.push(matchedRecord.id);
+              try {
+                localStorage.setItem(FAVOURITES_STORAGE_KEY, JSON.stringify(favs));
+              } catch (e) { }
+            }
+          }
+
+          // Parse embedded cover art & ID3 metadata
+          try {
+            const meta = await ID3Parser.parse(file);
+            if (meta) {
+              if (meta.title && (!matchedRecord.title || matchedRecord.title.startsWith('Track '))) {
+                matchedRecord.title = meta.title;
+              }
+              if (meta.artist && (!matchedRecord.artist || matchedRecord.artist === 'Unknown')) {
+                matchedRecord.artist = meta.artist;
+              }
+              if (meta.album && (!matchedRecord.album || matchedRecord.album === 'Unknown Album')) {
+                matchedRecord.album = meta.album;
+              }
+              if (meta.coverBlob) {
+                matchedRecord.coverBlob = meta.coverBlob;
+                matchedRecord.coverUrl = meta.coverUrl || URL.createObjectURL(meta.coverBlob);
+                matchedRecord.hasEmbeddedCover = true;
+              } else if (!matchedRecord.coverUrl) {
+                matchedRecord.coverUrl = 'assets/atsuko-no-cover-image.svg';
+              }
+              if (meta.lyrics) {
+                matchedRecord.lyrics = meta.lyrics;
+              }
+            }
+          } catch (e) { }
+
+          if (window.SongFingerprint) {
+            try {
+              matchedRecord.fingerprint = await window.SongFingerprint.compute(
+                file,
+                matchedRecord.duration || 0,
+                file.webkitRelativePath || file.name
+              );
+            } catch (e) { }
+          }
+
+          await fileManager.saveTrackToDB(matchedRecord);
+          matchedTracks.push(matchedRecord);
+        } else {
+          unmatchedFiles.push(file);
+        }
+      }
+
+      // 3. Process any truly new/unmatched files
+      let newTracks = [];
+      if (unmatchedFiles.length > 0) {
+        newTracks = await fileManager.processAudioFiles(unmatchedFiles, {
+          onProgress: ({ processed, total, remaining, percent }) => {
+            showLoadingProgress(remaining, percent);
+          },
+          onBatchMetadataUpdated: (updatedChunk) => {
+            updateVisibleSongCardMetadata(updatedChunk);
+            if (player.currentTrack && updatedChunk.some(t => t.id === player.currentTrack.id)) {
+              player.updateNowPlayingUI();
+            }
+          }
+        });
+
+        for (const track of newTracks) {
+          if (folder && folder.id) {
+            track.folderId = folder.id;
+          }
+          if (track.fileBlob && window.SongFingerprint) {
+            try {
+              track.fingerprint = await window.SongFingerprint.compute(track.fileBlob, track.duration, track.fileBlob.name);
+            } catch (e) { }
+          }
+        }
+        await fileManager.saveTracksBatchToDB(newTracks);
+      }
+
+      // 4. Update allTracks, cleaning up duplicate missing stubs
+      const combinedImported = [...matchedTracks, ...newTracks];
+      const importedIds = new Set(combinedImported.map(t => t.id));
+
+      const updatedAllTracks = [];
+      const addedIds = new Set();
+
+      for (const t of allTracks) {
+        if (importedIds.has(t.id)) {
+          const live = combinedImported.find(c => c.id === t.id);
+          if (live && !addedIds.has(live.id)) {
+            updatedAllTracks.push(live);
+            addedIds.add(live.id);
+          }
+        } else {
+          // Drop old missing stubs that match a live imported track
+          const isDuplicateStub = t.isMissing && combinedImported.some(live =>
+            (live.title && t.title && live.title.toLowerCase() === t.title.toLowerCase() && (t.fileBlob?.size || t.fingerprint?.size || 0) === (live.fileBlob?.size || live.fingerprint?.size || 0))
+          );
+          if (!isDuplicateStub && !addedIds.has(t.id)) {
+            updatedAllTracks.push(t);
+            addedIds.add(t.id);
+          }
+        }
+      }
+
+      for (const imp of combinedImported) {
+        if (!addedIds.has(imp.id)) {
+          updatedAllTracks.push(imp);
+          addedIds.add(imp.id);
+        }
+      }
+
+      allTracks = updatedAllTracks;
+      FileManager.sortTracks(allTracks);
+
+      // 5. Assign to Folder in folderService
+      if (folder && folder.id && window.folderService) {
+        window.folderService.assignSongsToFolder(folder.id, combinedImported.map(t => t.id), allTracks);
+      }
+
+      // 6. Automatically heal & reconnect Playlists from .atu!
+      const atuPlaylists = (window.dataFolderService && (
+        (Array.isArray(window.dataFolderService.originalAtuPlaylists) && window.dataFolderService.originalAtuPlaylists.length > 0)
+          ? window.dataFolderService.originalAtuPlaylists
+          : (window.dataFolderService.cachedData?.playlists || [])
+      )) || [];
+
+      const atuSongs = (window.dataFolderService && (
+        (Array.isArray(window.dataFolderService.originalAtuSongs) && window.dataFolderService.originalAtuSongs.length > 0)
+          ? window.dataFolderService.originalAtuSongs
+          : (window.dataFolderService.cachedData?.songs || [])
+      )) || [];
+
+      for (const pl of atuPlaylists) {
+        const targetPl = { ...pl };
+        targetPl.trackIds = Array.isArray(targetPl.trackIds) ? [...targetPl.trackIds] : (Array.isArray(targetPl.songIds) ? [...targetPl.songIds] : []);
+        targetPl.songIds = targetPl.trackIds;
+
+        for (let i = 0; i < targetPl.trackIds.length; i++) {
+          const tid = targetPl.trackIds[i];
+          let liveTrack = allTracks.find(t => t.id === tid && !t.isMissing);
+          if (!liveTrack) {
+            const oldSong = atuSongs.find(s => s.id === tid);
+            if (oldSong) {
+              const matchedLive = allTracks.find(t => !t.isMissing && (
+                (t.id === oldSong.id) ||
+                (t.title && oldSong.title && t.title.trim().toLowerCase() === oldSong.title.trim().toLowerCase()) ||
+                (t.fileBlob && oldSong.fingerprint?.name && t.fileBlob.name.trim().toLowerCase() === oldSong.fingerprint.name.split(/[\/\\]/).pop().trim().toLowerCase()) ||
+                (t.fileBlob && oldSong.relativePath && t.fileBlob.name.trim().toLowerCase() === oldSong.relativePath.split(/[\/\\]/).pop().trim().toLowerCase()) ||
+                (t.fileBlob && oldSong.fingerprint?.size && t.fileBlob.size === oldSong.fingerprint.size) ||
+                (t.fileBlob && oldSong.title && t.fileBlob.name.toLowerCase().includes(oldSong.title.toLowerCase()))
+              ));
+              if (matchedLive) {
+                targetPl.trackIds[i] = matchedLive.id;
+              }
+            } else {
+              const matchedLive = allTracks.find(t => !t.isMissing && (
+                t.id === tid ||
+                (t.title && t.title.toLowerCase() === String(tid).toLowerCase()) ||
+                (t.fileBlob && t.fileBlob.name.toLowerCase().includes(String(tid).toLowerCase()))
+              ));
+              if (matchedLive) {
+                targetPl.trackIds[i] = matchedLive.id;
+              }
+            }
+          }
+        }
+        targetPl.songIds = targetPl.trackIds;
+
+        // Only activate this playlist in Atsuko if it now has at least one live playable song!
+        const liveTracksInPl = targetPl.trackIds.filter(id => allTracks.some(t => t.id === id && !t.isMissing));
+        if (liveTracksInPl.length > 0) {
+          await fileManager.savePlaylist(targetPl);
+          const existingIdx = playlists.findIndex(p => p.id === targetPl.id);
+          if (existingIdx !== -1) {
+            playlists[existingIdx] = targetPl;
+          } else {
+            playlists.push(targetPl);
+          }
+        }
+      }
+
+      // 7. Persist to .atu file immediately
+      syncToAtu(true);
+
+      if (!player.currentTrack && allTracks.length > 0) {
+        player.setQueue(allTracks, 0, false);
+      }
+
+      showToast(`Added ${combinedImported.length} song${combinedImported.length > 1 ? 's' : ''} to "${folder ? folder.name : 'Library'}"`);
+
+      // 8. Re-render according to current view
+      if (currentView === 'all_songs') {
+        renderSongList();
+      } else if (currentView === 'folders_main') {
+        renderFoldersGridView();
+        populateFavFolders();
+        populateFoldersMainArtwork();
+      } else if (currentView === 'folder_detail') {
+        const renderName = (folder && folder.name) ? folder.name : (selectedFolderName || 'All Songs');
+        renderFolderDetailView(renderName);
+      } else if (currentView === 'playlists') {
+        renderPlaylistsView();
+      } else if (currentView === 'playlist_songs' && activePlaylistId) {
+        renderPlaylistSongsView(activePlaylistId);
+      } else if (currentView === 'home') {
+        renderHomePage();
       }
     } catch (err) {
+      console.error('Error importing songs:', err);
+      showToast('Error importing songs. Please try again.');
+    } finally {
       hideLoadingProgress();
-      console.warn('Folder selection canceled or error:', err);
+    }
+  }
+
+  function handleAddMusic() {
+    openAddMusicModal(null);
+  }
+
+  // Move Song to Folder Controller
+  let activeMoveToFolderTrackId = null;
+
+  function openMoveToFolderModal(trackId) {
+    initMoveToFolderModalListeners();
+    const modal = document.getElementById('moveToFolderModal');
+    if (!modal) return;
+
+    activeMoveToFolderTrackId = trackId;
+    const track = allTracks.find(t => t.id === trackId);
+    if (!track) return;
+
+    const titleEl = document.getElementById('moveToFolderSongTitle');
+    if (titleEl) titleEl.textContent = track.title;
+
+    const select = document.getElementById('moveToFolderSelect');
+    const input = document.getElementById('moveToFolderNewInput');
+    if (input) input.value = '';
+
+    if (select) {
+      const folders = window.folderService ? window.folderService.getAllFolders().filter(f => f.name.toLowerCase() !== 'recordings') : [];
+      select.innerHTML = '<option value="">-- Select a Folder --</option>' +
+        folders.map(f => `<option value="${f.id}" ${f.id === track.folderId ? 'selected' : ''}>${escapeHtml(f.name)} (${(f.songIds || []).length} songs)</option>`).join('');
+    }
+
+    modal.style.display = 'flex';
+    modal.classList.add('open');
+  }
+
+  function closeMoveToFolderModal() {
+    const modal = document.getElementById('moveToFolderModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.style.display = 'none';
+    }
+    activeMoveToFolderTrackId = null;
+  }
+
+  function initMoveToFolderModalListeners() {
+    const modal = document.getElementById('moveToFolderModal');
+    if (!modal || modal._initialized) return;
+    modal._initialized = true;
+
+    const closeBtn = document.getElementById('closeMoveToFolderModalBtn');
+    const cancelBtn = document.getElementById('moveToFolderCancelBtn');
+    const confirmBtn = document.getElementById('moveToFolderConfirmBtn');
+
+    if (closeBtn) closeBtn.onclick = closeMoveToFolderModal;
+    if (cancelBtn) cancelBtn.onclick = closeMoveToFolderModal;
+    modal.onclick = (e) => {
+      if (e.target === modal) closeMoveToFolderModal();
+    };
+
+    if (confirmBtn) {
+      confirmBtn.onclick = () => {
+        if (!activeMoveToFolderTrackId) return;
+        const track = allTracks.find(t => t.id === activeMoveToFolderTrackId);
+        if (!track) return;
+
+        const select = document.getElementById('moveToFolderSelect');
+        const input = document.getElementById('moveToFolderNewInput');
+
+        let targetFolder = null;
+        const newName = (input && input.value ? input.value : '').trim();
+        if (newName) {
+          if (newName.toLowerCase() === 'recordings') {
+            showToast('The "Recordings" folder is reserved for voice recordings.');
+            return;
+          }
+          let f = window.folderService.getFolderByName(newName);
+          if (!f) {
+            const cr = window.folderService.createFolder(newName);
+            f = cr.folder;
+          }
+          targetFolder = f;
+        } else if (select && select.value) {
+          targetFolder = window.folderService.getFolderById(select.value);
+        }
+
+        if (!targetFolder) {
+          alert('Please select or enter a folder name.');
+          return;
+        }
+
+        window.folderService.moveSong(track.id, targetFolder.id, allTracks);
+        track.folderId = targetFolder.id;
+        syncToAtu(true);
+        closeMoveToFolderModal();
+        showToast(`Moved "${track.title}" to ${targetFolder.name}`);
+
+        if (currentView === 'folders_main') {
+          renderFoldersGridView();
+          populateFavFolders();
+        } else if (currentView === 'folder_detail') {
+          renderFolderDetailView(selectedFolderName);
+        } else if (currentView === 'all_songs') {
+          renderSongList();
+        }
+      };
+    }
+
+    const moveInput = document.getElementById('moveToFolderNewInput');
+    if (moveInput && confirmBtn) {
+      moveInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          confirmBtn.click();
+        }
+      };
     }
   }
 
@@ -5905,7 +7334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.history && window.history.state && window.history.state.isSearch) {
       try {
         window.history.replaceState(null, '');
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Close mobile full player and up-next panel if open
@@ -5974,7 +7403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     if (filterAllBtn) filterAllBtn.textContent = 'All';
     if (filterColumnBtn) filterColumnBtn.textContent = 'Column';
-    if (filterShuffleBtn) filterShuffleBtn.textContent = 'Shuffle';
+    if (player) player.updatePlaybackModeUI();
 
     // PC Desktop View: Always reset to Mode 1 (List View) with 1st vertical bar active
     if (window.innerWidth > 900) {
@@ -5997,9 +7426,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function toggleShuffleFilter() {
-    const isShuffled = player.toggleShuffle();
-    showToast(isShuffled ? 'Shuffle: ON' : 'Shuffle: OFF');
-    if (window.updateMobileUpNextUI) window.updateMobileUpNextUI();
+    if (!player) return;
+    const newMode = player.cyclePlaybackMode();
+    if (newMode === 'shuffle') {
+      showToast('Playback: Shuffle ON');
+    } else if (newMode === 'repeat_one') {
+      showToast('Playback: Repeat One');
+    } else if (newMode === 'normal') {
+      showToast('Playback: Play in Line');
+    }
   }
 
   // Global "All" navigation buttons
@@ -6074,49 +7509,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // PC 3-Mode Playback Control: Single-click direct cycling (Repeat One -> Shuffle ON -> Play in Line)
+  // PC 3-Mode Playback Control: Single-click direct cycling (Shuffle ON -> Repeat One -> Play in Line)
   const pcShuffleBtn = document.getElementById('filterShuffleBtn');
   if (pcShuffleBtn) {
     pcShuffleBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      if (window.innerWidth <= 900) {
-        toggleShuffleFilter();
-        return;
-      }
-      if (currentView === 'explore') {
-        return; // UI only for now
-      }
-      if (currentView === 'playlist_songs' && activePlaylistId) {
-        const pl = playlists.find(p => p.id === activePlaylistId);
-        if (pl && (!player.activePlaylistId || player.activePlaylistId !== activePlaylistId || !player.isPlaying)) {
-          const playlistTracks = (pl.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
-          if (playlistTracks.length > 0) {
-            player.activePlaylistId = pl.id;
-            player.activePlaylistName = pl.name;
-            const shuffled = player.shuffleArray([...playlistTracks]);
-            player.setQueue(shuffled, 0, true);
-            player.setPlaybackMode('shuffle');
-            player.updateNowPlayingUI();
-            showToast(`Shuffling playlist: ${pl.name}`);
-            return;
-          }
-        }
-      }
-      const newMode = player.cyclePlaybackMode();
-      if (newMode === 'repeat_one') {
-        showToast('Playback: Repeat One');
-      } else if (newMode === 'shuffle') {
-        showToast('Playback: Shuffle ON');
-      } else if (newMode === 'normal') {
-        showToast('Playback: Play in Line');
-      }
+      toggleShuffleFilter();
     });
   }
 
-  // Mobile shuffle buttons keep existing mobile toggle
+  // Mobile shuffle buttons also cycle the 3 playback modes
   ['mobileFilterShuffleBtn', 'mobileFullFilterShuffleBtn'].forEach(id => {
     const b = document.getElementById(id);
-    if (b) b.addEventListener('click', toggleShuffleFilter);
+    if (b) {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleShuffleFilter();
+      });
+    }
   });
 
   // =========================================================================
@@ -6315,12 +7725,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           updateExpandedCoverLyrics();
         } else {
           const isLyricsActive = (currentView === 'artist_detail' && currentArtistDetailMode === 2) ||
-                                 (currentView === 'album_detail' && currentAlbumDetailMode === 2) ||
-                                 (currentView === 'favourites' && currentFavouritesMode === 2) ||
-                                 (currentView === 'genre' && currentGenreMode === 2) ||
-                                 (currentView === 'folder_detail' && currentFoldersPcMode === 2) ||
-                                 (currentView === 'playlist_songs' && currentPlaylistSongsMode === 2) ||
-                                 (currentView === 'all_songs' && currentPcMode === 2);
+            (currentView === 'album_detail' && currentAlbumDetailMode === 2) ||
+            (currentView === 'favourites' && currentFavouritesMode === 2) ||
+            (currentView === 'genre' && currentGenreMode === 2) ||
+            (currentView === 'folder_detail' && currentFoldersPcMode === 2) ||
+            (currentView === 'playlist_songs' && currentPlaylistSongsMode === 2) ||
+            (currentView === 'all_songs' && currentPcMode === 2);
           if (isLyricsActive) {
             syncPcLyricsHighlight();
           }
@@ -6338,12 +7748,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.onMusicoPlaybackChange = (isPlaying) => {
     if (window.innerWidth > 900) {
       const isGridActive = (currentView === 'artist_detail' && currentArtistDetailMode === 3) ||
-                           (currentView === 'album_detail' && currentAlbumDetailMode === 3) ||
-                           (currentView === 'favourites' && currentFavouritesMode === 3) ||
-                           (currentView === 'genre' && currentGenreMode === 3) ||
-                           (currentView === 'folder_detail' && currentFoldersPcMode === 3) ||
-                           (currentView === 'playlist_songs' && currentPlaylistSongsMode === 3) ||
-                           (currentView === 'all_songs' && currentPcMode === 3);
+        (currentView === 'album_detail' && currentAlbumDetailMode === 3) ||
+        (currentView === 'favourites' && currentFavouritesMode === 3) ||
+        (currentView === 'genre' && currentGenreMode === 3) ||
+        (currentView === 'folder_detail' && currentFoldersPcMode === 3) ||
+        (currentView === 'playlist_songs' && currentPlaylistSongsMode === 3) ||
+        (currentView === 'all_songs' && currentPcMode === 3);
       if (isGridActive) {
         document.querySelectorAll('.masonry-card').forEach(card => {
           const isCurrent = player.currentTrack && card.dataset.id === player.currentTrack.id;
@@ -6359,12 +7769,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (window.innerWidth > 900) {
       const isQueueActive = (currentView === 'artist_detail' && currentArtistDetailMode === 4) ||
-                            (currentView === 'album_detail' && currentAlbumDetailMode === 4) ||
-                            (currentView === 'favourites' && currentFavouritesMode === 4) ||
-                            (currentView === 'genre' && currentGenreMode === 4) ||
-                            (currentView === 'folder_detail' && currentFoldersPcMode === 4) ||
-                            (currentView === 'playlist_songs' && currentPlaylistSongsMode === 4) ||
-                            (currentView === 'all_songs' && currentPcMode === 4);
+        (currentView === 'album_detail' && currentAlbumDetailMode === 4) ||
+        (currentView === 'favourites' && currentFavouritesMode === 4) ||
+        (currentView === 'genre' && currentGenreMode === 4) ||
+        (currentView === 'folder_detail' && currentFoldersPcMode === 4) ||
+        (currentView === 'playlist_songs' && currentPlaylistSongsMode === 4) ||
+        (currentView === 'all_songs' && currentPcMode === 4);
       if (isQueueActive) {
         renderPcQueueView();
       }
@@ -6413,7 +7823,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getUpcomingTracks() {
     if (!player.queue || player.queue.length === 0 || !player.currentTrack) return [];
-    
+
     // 1. REPEAT ONE SONG MODE: Show ONLY the currently playing song
     if (player.repeatMode === 'one') {
       return [player.currentTrack];
@@ -6421,28 +7831,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const currentIdx = player.currentIndex;
     if (currentIdx === -1) return player.queue;
-    
+
     // 2. NORMAL MODE / SHUFFLE MODE: Songs following current song in active queue
     let upcoming = player.queue.slice(currentIdx + 1);
-    
+
     // 3. REPEAT ALL MODE: Loop from beginning if at end of queue
     if (player.repeatMode === 'all' && upcoming.length === 0 && player.queue.length > 1) {
       upcoming = player.queue.slice(0, currentIdx);
     }
-    
+
     return upcoming;
   }
 
   function renderUpNextCard(track) {
-    const isFallback = !track.coverUrl || 
-                       track.coverUrl.includes('atsuko-no-cover-image') ||
-                       track.coverUrl.includes('Atsuko - NoCoverImg') ||
-                       track.coverUrl.includes('atsuko') ||
-                       track.coverUrl.includes('M logo') ||
-                       track.coverUrl.includes('MlogoforMusicItems') ||
-                       track.coverUrl.includes('Mlogo.png') || 
-                       track.coverUrl.includes('Group 4') || 
-                       track.coverUrl.trim() === '';
+    const isFallback = !track.coverUrl ||
+      track.coverUrl.includes('atsuko-no-cover-image') ||
+      track.coverUrl.includes('Atsuko - NoCoverImg') ||
+      track.coverUrl.includes('atsuko') ||
+      track.coverUrl.includes('M logo') ||
+      track.coverUrl.includes('MlogoforMusicItems') ||
+      track.coverUrl.includes('Mlogo.png') ||
+      track.coverUrl.includes('Group 4') ||
+      track.coverUrl.trim() === '';
     const coverSrc = isFallback ? 'assets/atsuko-no-cover-image.svg' : track.coverUrl;
 
     return `
@@ -6660,90 +8070,82 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Mobile Bottom Navigation Bar Action Handling
   document.querySelectorAll('.mobile-bottom-nav').forEach(nav => {
     nav.querySelectorAll('.mobile-nav-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const action = btn.dataset.action;
+        btn.addEventListener('click', (e) => {
+          const action = btn.dataset.action;
 
-        // If inside full player and tapped all-songs or playlists, close full player
-        if (mobileFullPlayer && (action === 'all-songs' || action === 'playlists')) {
-          mobileFullPlayer.classList.remove('open');
-        }
-
-        if (action === 'delete') {
-          if (allTracks.length > 0 && confirm('Clear all songs from library?')) {
-            fileManager.clearAllTracks();
-            allTracks = [];
-            player.setQueue([], 0, false);
-            renderSongList();
-            showToast('Library cleared. No Songs.');
-          } else if (allTracks.length === 0) {
-            showToast('Library is already empty.');
+          // If inside full player and tapped all-songs or playlists, close full player
+          if (mobileFullPlayer && (action === 'all-songs' || action === 'playlists')) {
+            mobileFullPlayer.classList.remove('open');
           }
-        } else if (action === 'all-songs') {
-          setAllFilter();
-          showToast('All Songs');
-        } else if (action === 'home') {
-          renderHomePage();
-          showToast('Home');
-        } else if (action === 'playlists') {
-          renderPlaylistsView();
-          showToast('Playlists');
-        } else if (action === 'explore') {
-          renderExploreView();
-          showToast('Library');
-        }
+
+          if (action === 'delete') {
+            if (e) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+            openClearLibraryModal();
+          } else if (action === 'all-songs') {
+            setAllFilter();
+            showToast('All Songs');
+          } else if (action === 'home') {
+            renderHomePage();
+            showToast('Home');
+          } else if (action === 'playlists') {
+            renderPlaylistsView();
+            showToast('Playlists');
+          } else if (action === 'explore') {
+            renderExploreView();
+            showToast('Library');
+          }
+        });
       });
     });
-  });
 
-  // View selector dropdown
-  if (viewSelectorPill && viewDropdownMenu) {
-    viewSelectorPill.addEventListener('click', (e) => {
-      e.stopPropagation();
-      viewDropdownMenu.classList.toggle('open');
-    });
+    // View selector dropdown
+    if (viewSelectorPill && viewDropdownMenu) {
+      viewSelectorPill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        viewDropdownMenu.classList.toggle('open');
+      });
 
-    document.addEventListener('click', () => {
-      viewDropdownMenu.classList.remove('open');
-    });
-
-    viewDropdownMenu.querySelectorAll('.dropdown-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        const view = item.dataset.view;
-        const text = item.textContent.trim();
+      document.addEventListener('click', () => {
         viewDropdownMenu.classList.remove('open');
-
-        if (view === 'home') {
-          renderHomePage();
-        } else if (view === 'explore') {
-          renderExploreView();
-        } else if (view === 'playlists') {
-          renderPlaylistsView();
-        } else if (view === 'albums') {
-          renderAlbumsMainView();
-        } else if (view === 'favorites') {
-          renderFavouritesView();
-        } else {
-          setAllFilter();
-        }
-        showToast(`View: ${text}`);
       });
-    });
-  }
+
+      viewDropdownMenu.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const view = item.dataset.view;
+          const text = item.textContent.trim();
+          viewDropdownMenu.classList.remove('open');
+
+          if (view === 'home') {
+            renderHomePage();
+          } else if (view === 'explore') {
+            renderExploreView();
+          } else if (view === 'playlists') {
+            renderPlaylistsView();
+          } else if (view === 'albums') {
+            renderAlbumsMainView();
+          } else if (view === 'favorites') {
+            renderFavouritesView();
+          } else {
+            setAllFilter();
+          }
+          showToast(`View: ${text}`);
+        });
+      });
+    }
 
   // Left Sidebar Menu Items navigation
   document.querySelectorAll('.menu-item-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
       const action = btn.dataset.action;
       if (action === 'delete') {
-        if (allTracks.length > 0 && confirm('Clear all songs from library?')) {
-          fileManager.clearAllTracks();
-          allTracks = [];
-          player.setQueue([], 0, false);
-          renderSongList();
-          showToast('Library cleared. No Songs.');
-        } else if (allTracks.length === 0) {
-          showToast('Library is already empty.');
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
         }
+        openClearLibraryModal();
       } else if (action === 'explore') {
         renderExploreView();
       } else if (action === 'playlists') {
@@ -6756,1038 +8158,1038 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  const sidebarAllSongsBtn = document.getElementById('sidebarAllSongsBtn');
-  if (sidebarAllSongsBtn) {
-    sidebarAllSongsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setAllFilter();
-    });
-  }
+      const sidebarAllSongsBtn = document.getElementById('sidebarAllSongsBtn');
+      if (sidebarAllSongsBtn) {
+        sidebarAllSongsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setAllFilter();
+        });
+      }
 
-  const logoBtn = document.getElementById('logoBtn');
-  if (logoBtn) {
-    logoBtn.addEventListener('click', () => {
-      renderHomePage();
-    });
-  }
+      const logoBtn = document.getElementById('logoBtn');
+      if (logoBtn) {
+        logoBtn.addEventListener('click', () => {
+          renderHomePage();
+        });
+      }
 
-  // Top Horizontal Slider: Vertical Song-List Scroll Control
-  let isDraggingSlider = false;
+      // Top Horizontal Slider: Vertical Song-List Scroll Control
+      let isDraggingSlider = false;
 
-  function updateSongListScrollFromSlider(e) {
-    if (!topSliderTrack || !songsListContainer) return;
-    const rect = topSliderTrack.getBoundingClientRect();
-    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-    const percent = rect.width > 0 ? (x / rect.width) * 100 : 0;
-    
-    // Update thumb position on the horizontal bar
-    if (topSliderThumb) {
-      const thumbWidth = topSliderThumb.offsetWidth || 32;
-      const maxLeft = Math.max(0, rect.width - thumbWidth - 4);
-      const leftPx = (percent / 100) * maxLeft + 2;
-      topSliderThumb.style.left = `${leftPx}px`;
-    }
+      function updateSongListScrollFromSlider(e) {
+        if (!topSliderTrack || !songsListContainer) return;
+        const rect = topSliderTrack.getBoundingClientRect();
+        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+        const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+        const percent = rect.width > 0 ? (x / rect.width) * 100 : 0;
 
-    // Scroll songs list vertically
-    if (isColumnViewActive) {
-      const unifiedScroll = document.getElementById('columnViewUnifiedScroll');
-      if (unifiedScroll) {
-        const maxScroll = Math.max(0, unifiedScroll.scrollHeight - unifiedScroll.clientHeight);
+        // Update thumb position on the horizontal bar
+        if (topSliderThumb) {
+          const thumbWidth = topSliderThumb.offsetWidth || 32;
+          const maxLeft = Math.max(0, rect.width - thumbWidth - 4);
+          const leftPx = (percent / 100) * maxLeft + 2;
+          topSliderThumb.style.left = `${leftPx}px`;
+        }
+
+        // Scroll songs list vertically
+        if (isColumnViewActive) {
+          const unifiedScroll = document.getElementById('columnViewUnifiedScroll');
+          if (unifiedScroll) {
+            const maxScroll = Math.max(0, unifiedScroll.scrollHeight - unifiedScroll.clientHeight);
+            if (maxScroll > 0) {
+              unifiedScroll.scrollTop = (percent / 100) * maxScroll;
+            }
+          }
+        } else if (songsListContainer) {
+          const maxScroll = Math.max(0, songsListContainer.scrollHeight - songsListContainer.clientHeight);
+          if (maxScroll > 0) {
+            songsListContainer.scrollTop = (percent / 100) * maxScroll;
+            updateAlphabetScrollIndicator();
+          }
+        }
+      }
+
+      function updateSliderThumbFromSongListScroll() {
+        if (isDraggingSlider || !topSliderTrack || !topSliderThumb) return;
+        const target = isColumnViewActive ? document.getElementById('columnViewUnifiedScroll') : songsListContainer;
+        if (!target) return;
+        const maxScroll = target.scrollHeight - target.clientHeight;
+        const scrollPercent = maxScroll > 0 ? Math.min(100, Math.max(0, (target.scrollTop / maxScroll) * 100)) : 0;
+        const trackWidth = topSliderTrack.clientWidth || 300;
+        const thumbWidth = topSliderThumb.offsetWidth || 32;
+        const maxLeft = Math.max(0, trackWidth - thumbWidth - 4);
+        const leftPx = (scrollPercent / 100) * maxLeft + 2;
+        topSliderThumb.style.left = `${leftPx}px`;
+      }
+
+      // Mobile Vertical Scrollbar Logic (FIX 2: Real Mobile Custom Scrollbar with Black Track & Gray Thumb)
+      const mobileScrollbarTrack = document.getElementById('mobileScrollbarTrack');
+      const mobileScrollbarThumb = document.getElementById('mobileScrollbarThumb');
+      let isDraggingMobileScrollbar = false;
+
+      function updateMobileScrollbarThumb() {
+        if (!mobileScrollbarTrack || !mobileScrollbarThumb || !songsListContainer) return;
+        const maxScroll = songsListContainer.scrollHeight - songsListContainer.clientHeight;
+        const trackHeight = mobileScrollbarTrack.clientHeight;
+
+        if (maxScroll <= 0 || trackHeight <= 0) {
+          mobileScrollbarThumb.style.height = `${Math.round(Math.min(58, Math.max(36, trackHeight * 0.22 * 1.8)))}px`;
+          mobileScrollbarThumb.style.top = '2px';
+          return;
+        }
+
+        // Thumb height scaled by 1.8x
+        const visibleRatio = songsListContainer.clientHeight / songsListContainer.scrollHeight;
+        const baseThumbHeight = Math.max(20, Math.min(trackHeight * 0.28, Math.max(24, visibleRatio * trackHeight * 0.32)));
+        const thumbHeight = Math.round(baseThumbHeight * 1.8);
+        mobileScrollbarThumb.style.height = `${thumbHeight}px`;
+
+        const maxTop = Math.max(0, trackHeight - thumbHeight - 4);
+        const scrollPercent = Math.min(1, Math.max(0, songsListContainer.scrollTop / maxScroll));
+        const topPx = 2 + scrollPercent * maxTop;
+        mobileScrollbarThumb.style.top = `${topPx}px`;
+      }
+
+      function handleMobileScrollbarMove(clientY) {
+        if (!mobileScrollbarTrack || !songsListContainer) return;
+        const rect = mobileScrollbarTrack.getBoundingClientRect();
+        const trackHeight = rect.height;
+        const thumbHeight = mobileScrollbarThumb ? mobileScrollbarThumb.clientHeight : 50;
+        const maxTop = Math.max(1, trackHeight - thumbHeight - 4);
+
+        // Position relative to track top, center thumb under finger
+        const relativeY = clientY - rect.top - thumbHeight / 2;
+        const clampedY = Math.max(0, Math.min(maxTop, relativeY));
+        const scrollPercent = clampedY / maxTop;
+
+        const maxScroll = songsListContainer.scrollHeight - songsListContainer.clientHeight;
         if (maxScroll > 0) {
-          unifiedScroll.scrollTop = (percent / 100) * maxScroll;
+          songsListContainer.scrollTop = scrollPercent * maxScroll;
         }
       }
-    } else if (songsListContainer) {
-      const maxScroll = Math.max(0, songsListContainer.scrollHeight - songsListContainer.clientHeight);
-      if (maxScroll > 0) {
-        songsListContainer.scrollTop = (percent / 100) * maxScroll;
-        updateAlphabetScrollIndicator();
+
+      if (mobileScrollbarTrack) {
+        mobileScrollbarTrack.addEventListener('touchstart', (e) => {
+          isDraggingMobileScrollbar = true;
+          handleMobileScrollbarMove(e.touches[0].clientY);
+        }, { passive: false });
+
+        mobileScrollbarTrack.addEventListener('mousedown', (e) => {
+          isDraggingMobileScrollbar = true;
+          handleMobileScrollbarMove(e.clientY);
+        });
       }
-    }
-  }
 
-  function updateSliderThumbFromSongListScroll() {
-    if (isDraggingSlider || !topSliderTrack || !topSliderThumb) return;
-    const target = isColumnViewActive ? document.getElementById('columnViewUnifiedScroll') : songsListContainer;
-    if (!target) return;
-    const maxScroll = target.scrollHeight - target.clientHeight;
-    const scrollPercent = maxScroll > 0 ? Math.min(100, Math.max(0, (target.scrollTop / maxScroll) * 100)) : 0;
-    const trackWidth = topSliderTrack.clientWidth || 300;
-    const thumbWidth = topSliderThumb.offsetWidth || 32;
-    const maxLeft = Math.max(0, trackWidth - thumbWidth - 4);
-    const leftPx = (scrollPercent / 100) * maxLeft + 2;
-    topSliderThumb.style.left = `${leftPx}px`;
-  }
+      // Alphabetical Scroll Indicator for PC/Desktop view
+      let alphabetFadeTimeout = null;
 
-  // Mobile Vertical Scrollbar Logic (FIX 2: Real Mobile Custom Scrollbar with Black Track & Gray Thumb)
-  const mobileScrollbarTrack = document.getElementById('mobileScrollbarTrack');
-  const mobileScrollbarThumb = document.getElementById('mobileScrollbarThumb');
-  let isDraggingMobileScrollbar = false;
+      function getVisibleAlphabetLetter() {
+        if (!songsListContainer) return '';
 
-  function updateMobileScrollbarThumb() {
-    if (!mobileScrollbarTrack || !mobileScrollbarThumb || !songsListContainer) return;
-    const maxScroll = songsListContainer.scrollHeight - songsListContainer.clientHeight;
-    const trackHeight = mobileScrollbarTrack.clientHeight;
+        const containerRect = songsListContainer.getBoundingClientRect();
+        const cards = songsListContainer.querySelectorAll('.song-card');
 
-    if (maxScroll <= 0 || trackHeight <= 0) {
-      mobileScrollbarThumb.style.height = `${Math.round(Math.min(58, Math.max(36, trackHeight * 0.22 * 1.8)))}px`;
-      mobileScrollbarThumb.style.top = '2px';
-      return;
-    }
-
-    // Thumb height scaled by 1.8x
-    const visibleRatio = songsListContainer.clientHeight / songsListContainer.scrollHeight;
-    const baseThumbHeight = Math.max(20, Math.min(trackHeight * 0.28, Math.max(24, visibleRatio * trackHeight * 0.32)));
-    const thumbHeight = Math.round(baseThumbHeight * 1.8);
-    mobileScrollbarThumb.style.height = `${thumbHeight}px`;
-
-    const maxTop = Math.max(0, trackHeight - thumbHeight - 4);
-    const scrollPercent = Math.min(1, Math.max(0, songsListContainer.scrollTop / maxScroll));
-    const topPx = 2 + scrollPercent * maxTop;
-    mobileScrollbarThumb.style.top = `${topPx}px`;
-  }
-
-  function handleMobileScrollbarMove(clientY) {
-    if (!mobileScrollbarTrack || !songsListContainer) return;
-    const rect = mobileScrollbarTrack.getBoundingClientRect();
-    const trackHeight = rect.height;
-    const thumbHeight = mobileScrollbarThumb ? mobileScrollbarThumb.clientHeight : 50;
-    const maxTop = Math.max(1, trackHeight - thumbHeight - 4);
-    
-    // Position relative to track top, center thumb under finger
-    const relativeY = clientY - rect.top - thumbHeight / 2;
-    const clampedY = Math.max(0, Math.min(maxTop, relativeY));
-    const scrollPercent = clampedY / maxTop;
-
-    const maxScroll = songsListContainer.scrollHeight - songsListContainer.clientHeight;
-    if (maxScroll > 0) {
-      songsListContainer.scrollTop = scrollPercent * maxScroll;
-    }
-  }
-
-  if (mobileScrollbarTrack) {
-    mobileScrollbarTrack.addEventListener('touchstart', (e) => {
-      isDraggingMobileScrollbar = true;
-      handleMobileScrollbarMove(e.touches[0].clientY);
-    }, { passive: false });
-
-    mobileScrollbarTrack.addEventListener('mousedown', (e) => {
-      isDraggingMobileScrollbar = true;
-      handleMobileScrollbarMove(e.clientY);
-    });
-  }
-
-  // Alphabetical Scroll Indicator for PC/Desktop view
-  let alphabetFadeTimeout = null;
-
-  function getVisibleAlphabetLetter() {
-    if (!songsListContainer) return '';
-
-    const containerRect = songsListContainer.getBoundingClientRect();
-    const cards = songsListContainer.querySelectorAll('.song-card');
-
-    for (let i = 0; i < cards.length; i++) {
-      const card = cards[i];
-      const cardRect = card.getBoundingClientRect();
-      // The first card whose bottom is below container top and top is within container
-      if (cardRect.bottom > containerRect.top + 6 && cardRect.top < containerRect.bottom - 6) {
-        const titleEl = card.querySelector('.song-title');
-        let title = titleEl ? titleEl.textContent : '';
-        if (!title) {
-          const id = card.getAttribute('data-id');
-          const t = allTracks.find(x => x.id === id);
-          if (t) title = t.title || '';
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i];
+          const cardRect = card.getBoundingClientRect();
+          // The first card whose bottom is below container top and top is within container
+          if (cardRect.bottom > containerRect.top + 6 && cardRect.top < containerRect.bottom - 6) {
+            const titleEl = card.querySelector('.song-title');
+            let title = titleEl ? titleEl.textContent : '';
+            if (!title) {
+              const id = card.getAttribute('data-id');
+              const t = allTracks.find(x => x.id === id);
+              if (t) title = t.title || '';
+            }
+            if (title) {
+              const clean = title.trim().replace(/^[^a-zA-Z0-9]+/, '');
+              const char = (clean.charAt(0) || title.trim().charAt(0)).toUpperCase();
+              if (char >= 'A' && char <= 'Z') return char;
+              if (char >= '0' && char <= '9') return char;
+              return '#';
+            }
+          }
         }
-        if (title) {
-          const clean = title.trim().replace(/^[^a-zA-Z0-9]+/, '');
-          const char = (clean.charAt(0) || title.trim().charAt(0)).toUpperCase();
-          if (char >= 'A' && char <= 'Z') return char;
-          if (char >= '0' && char <= '9') return char;
-          return '#';
+
+        // Fallback: direct index estimation based on scroll position in allTracks
+        if (allTracks && allTracks.length > 0) {
+          const maxScroll = Math.max(1, songsListContainer.scrollHeight - songsListContainer.clientHeight);
+          const ratio = Math.max(0, Math.min(1, songsListContainer.scrollTop / maxScroll));
+          const idx = Math.min(allTracks.length - 1, Math.floor(ratio * allTracks.length));
+          const track = allTracks[idx];
+          if (track && track.title) {
+            const clean = track.title.trim().replace(/^[^a-zA-Z0-9]+/, '');
+            const char = (clean.charAt(0) || track.title.trim().charAt(0)).toUpperCase();
+            if (char >= 'A' && char <= 'Z') return char;
+            if (char >= '0' && char <= '9') return char;
+            return '#';
+          }
+        }
+
+        return '';
+      }
+
+      function updateAlphabetScrollIndicator(isScrolling = true) {
+        const alphabetIndicator = document.getElementById('alphabetScrollIndicator');
+        if (!alphabetIndicator || !songsListContainer || window.innerWidth <= 768) return;
+
+        if (currentView !== 'all_songs' || !allTracks || allTracks.length === 0) {
+          alphabetIndicator.classList.remove('visible', 'scrolling');
+          return;
+        }
+
+        const letter = getVisibleAlphabetLetter();
+        if (letter) {
+          alphabetIndicator.textContent = letter;
+          alphabetIndicator.classList.add('visible');
+          if (isScrolling) {
+            alphabetIndicator.classList.add('scrolling');
+          }
+
+          if (alphabetFadeTimeout) {
+            clearTimeout(alphabetFadeTimeout);
+          }
+          alphabetFadeTimeout = setTimeout(() => {
+            alphabetIndicator.classList.remove('scrolling');
+            alphabetIndicator.classList.remove('visible');
+          }, 1500);
         }
       }
-    }
 
-    // Fallback: direct index estimation based on scroll position in allTracks
-    if (allTracks && allTracks.length > 0) {
-      const maxScroll = Math.max(1, songsListContainer.scrollHeight - songsListContainer.clientHeight);
-      const ratio = Math.max(0, Math.min(1, songsListContainer.scrollTop / maxScroll));
-      const idx = Math.min(allTracks.length - 1, Math.floor(ratio * allTracks.length));
-      const track = allTracks[idx];
-      if (track && track.title) {
-        const clean = track.title.trim().replace(/^[^a-zA-Z0-9]+/, '');
-        const char = (clean.charAt(0) || track.title.trim().charAt(0)).toUpperCase();
-        if (char >= 'A' && char <= 'Z') return char;
-        if (char >= '0' && char <= '9') return char;
-        return '#';
-      }
-    }
+      if (songsListContainer) {
+        songsListContainer.addEventListener('scroll', () => {
+          updateSliderThumbFromSongListScroll();
+          updateMobileScrollbarThumb();
+          updateAlphabetScrollIndicator(true);
+        }, { passive: true });
 
-    return '';
-  }
+        songsListContainer.addEventListener('wheel', () => {
+          updateAlphabetScrollIndicator(true);
+        }, { passive: true });
 
-  function updateAlphabetScrollIndicator(isScrolling = true) {
-    const alphabetIndicator = document.getElementById('alphabetScrollIndicator');
-    if (!alphabetIndicator || !songsListContainer || window.innerWidth <= 768) return;
-
-    if (currentView !== 'all_songs' || !allTracks || allTracks.length === 0) {
-      alphabetIndicator.classList.remove('visible', 'scrolling');
-      return;
-    }
-
-    const letter = getVisibleAlphabetLetter();
-    if (letter) {
-      alphabetIndicator.textContent = letter;
-      alphabetIndicator.classList.add('visible');
-      if (isScrolling) {
-        alphabetIndicator.classList.add('scrolling');
+        songsListContainer.addEventListener('mouseenter', () => {
+          updateAlphabetScrollIndicator(false);
+        });
       }
 
-      if (alphabetFadeTimeout) {
-        clearTimeout(alphabetFadeTimeout);
+      window.addEventListener('resize', () => {
+        updateSliderThumbFromSongListScroll();
+        updateMobileScrollbarThumb();
+        if (window.updateMobileUpNextUI) window.updateMobileUpNextUI();
+      });
+
+      if (topSliderTrack) {
+        topSliderTrack.addEventListener('mousedown', (e) => {
+          isDraggingSlider = true;
+          updateSongListScrollFromSlider(e);
+        });
+
+        topSliderTrack.addEventListener('touchstart', (e) => {
+          isDraggingSlider = true;
+          updateSongListScrollFromSlider(e);
+        }, { passive: true });
       }
-      alphabetFadeTimeout = setTimeout(() => {
-        alphabetIndicator.classList.remove('scrolling');
-        alphabetIndicator.classList.remove('visible');
-      }, 1500);
-    }
-  }
 
-  if (songsListContainer) {
-    songsListContainer.addEventListener('scroll', () => {
-      updateSliderThumbFromSongListScroll();
-      updateMobileScrollbarThumb();
-      updateAlphabetScrollIndicator(true);
-    }, { passive: true });
+      window.addEventListener('mousemove', (e) => {
+        if (isDraggingSlider) updateSongListScrollFromSlider(e);
+        if (isDraggingMobileScrollbar) handleMobileScrollbarMove(e.clientY);
+      });
 
-    songsListContainer.addEventListener('wheel', () => {
-      updateAlphabetScrollIndicator(true);
-    }, { passive: true });
+      window.addEventListener('touchmove', (e) => {
+        if (isDraggingSlider) updateSongListScrollFromSlider(e);
+        if (isDraggingMobileScrollbar) {
+          e.preventDefault();
+          handleMobileScrollbarMove(e.touches[0].clientY);
+        }
+      }, { passive: false });
 
-    songsListContainer.addEventListener('mouseenter', () => {
-      updateAlphabetScrollIndicator(false);
-    });
-  }
+      window.addEventListener('mouseup', () => {
+        if (isDraggingSlider) isDraggingSlider = false;
+        if (isDraggingMobileScrollbar) isDraggingMobileScrollbar = false;
+      });
 
-  window.addEventListener('resize', () => {
-    updateSliderThumbFromSongListScroll();
-    updateMobileScrollbarThumb();
-    if (window.updateMobileUpNextUI) window.updateMobileUpNextUI();
-  });
+      window.addEventListener('touchend', () => {
+        if (isDraggingSlider) isDraggingSlider = false;
+        if (isDraggingMobileScrollbar) isDraggingMobileScrollbar = false;
+      });
 
-  if (topSliderTrack) {
-    topSliderTrack.addEventListener('mousedown', (e) => {
-      isDraggingSlider = true;
-      updateSongListScrollFromSlider(e);
-    });
-
-    topSliderTrack.addEventListener('touchstart', (e) => {
-      isDraggingSlider = true;
-      updateSongListScrollFromSlider(e);
-    }, { passive: true });
-  }
-
-  window.addEventListener('mousemove', (e) => {
-    if (isDraggingSlider) updateSongListScrollFromSlider(e);
-    if (isDraggingMobileScrollbar) handleMobileScrollbarMove(e.clientY);
-  });
-
-  window.addEventListener('touchmove', (e) => {
-    if (isDraggingSlider) updateSongListScrollFromSlider(e);
-    if (isDraggingMobileScrollbar) {
-      e.preventDefault();
-      handleMobileScrollbarMove(e.touches[0].clientY);
-    }
-  }, { passive: false });
-
-  window.addEventListener('mouseup', () => {
-    if (isDraggingSlider) isDraggingSlider = false;
-    if (isDraggingMobileScrollbar) isDraggingMobileScrollbar = false;
-  });
-
-  window.addEventListener('touchend', () => {
-    if (isDraggingSlider) isDraggingSlider = false;
-    if (isDraggingMobileScrollbar) isDraggingMobileScrollbar = false;
-  });
-
-  // Dedicated Audio Timeline Seek Handlers (Desktop & Mobile)
-  if (progressBarContainer) {
-    progressBarContainer.addEventListener('click', (e) => {
-      const rect = progressBarContainer.getBoundingClientRect();
-      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-      const percent = (x / rect.width) * 100;
-      player.seek(percent);
-    });
-  }
-
-  const mobilePopupProgressTrack = document.getElementById('mobilePopupProgressTrack');
-  if (mobilePopupProgressTrack) {
-    mobilePopupProgressTrack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const rect = mobilePopupProgressTrack.getBoundingClientRect();
-      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const percent = (x / rect.width) * 100;
-      player.seek(percent);
-    });
-  }
-
-  const mobileFullProgressBarContainer = document.getElementById('mobileFullProgressBarContainer');
-  if (mobileFullProgressBarContainer) {
-    mobileFullProgressBarContainer.addEventListener('click', (e) => {
-      const rect = mobileFullProgressBarContainer.getBoundingClientRect();
-      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const percent = (x / rect.width) * 100;
-      player.seek(percent);
-    });
-  }
-
-  // Dedicated Artist Mini Player Timeline Seek & Controls Handlers (Image 2)
-  const artistMiniProgressTrack = document.getElementById('artistMiniProgressTrack');
-  if (artistMiniProgressTrack) {
-    artistMiniProgressTrack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const rect = artistMiniProgressTrack.getBoundingClientRect();
-      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const percent = (x / rect.width) * 100;
-      player.seek(percent);
-    });
-  }
-
-  const artistMiniPrevBtn = document.getElementById('artistMiniPrevBtn');
-  if (artistMiniPrevBtn) {
-    artistMiniPrevBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.prev();
-    });
-  }
-
-  const artistMiniPlayPauseBtn = document.getElementById('artistMiniPlayPauseBtn');
-  if (artistMiniPlayPauseBtn) {
-    artistMiniPlayPauseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (allTracks.length === 0) {
-        handleAddMusic();
-      } else {
-        player.togglePlay();
+      // Dedicated Audio Timeline Seek Handlers (Desktop & Mobile)
+      if (progressBarContainer) {
+        progressBarContainer.addEventListener('click', (e) => {
+          const rect = progressBarContainer.getBoundingClientRect();
+          const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+          const percent = (x / rect.width) * 100;
+          player.seek(percent);
+        });
       }
-    });
-  }
 
-  const artistMiniNextBtn = document.getElementById('artistMiniNextBtn');
-  if (artistMiniNextBtn) {
-    artistMiniNextBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.next();
-    });
-  }
-
-  // Dedicated Artist / Library Mini Player Fav Button Handler
-  const artistMiniFavBtn = document.getElementById('artistMiniFavBtn');
-  if (artistMiniFavBtn) {
-    artistMiniFavBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!player.currentTrack) {
-        showToast('No song playing');
-        return;
+      const mobilePopupProgressTrack = document.getElementById('mobilePopupProgressTrack');
+      if (mobilePopupProgressTrack) {
+        mobilePopupProgressTrack.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const rect = mobilePopupProgressTrack.getBoundingClientRect();
+          const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+          const percent = (x / rect.width) * 100;
+          player.seek(percent);
+        });
       }
-      const added = toggleFavourite(player.currentTrack.id);
-      showToast(added ? 'Added to Favourites' : 'Removed from Favourites');
-      if (currentView === 'favourites') {
-        renderFavouritesView();
+
+      const mobileFullProgressBarContainer = document.getElementById('mobileFullProgressBarContainer');
+      if (mobileFullProgressBarContainer) {
+        mobileFullProgressBarContainer.addEventListener('click', (e) => {
+          const rect = mobileFullProgressBarContainer.getBoundingClientRect();
+          const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+          const percent = (x / rect.width) * 100;
+          player.seek(percent);
+        });
       }
-    });
-  }
 
-  // Dedicated Column View Mini Player Controls & Seeking (Image 2)
-  const columnMiniPrevBtn = document.getElementById('columnMiniPrevBtn');
-  if (columnMiniPrevBtn) {
-    columnMiniPrevBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.prev();
-    });
-  }
-
-  const columnMiniPlayPauseBtn = document.getElementById('columnMiniPlayPauseBtn');
-  if (columnMiniPlayPauseBtn) {
-    columnMiniPlayPauseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (allTracks.length === 0) {
-        handleAddMusic();
-      } else {
-        player.togglePlay();
+      // Dedicated Artist Mini Player Timeline Seek & Controls Handlers (Image 2)
+      const artistMiniProgressTrack = document.getElementById('artistMiniProgressTrack');
+      if (artistMiniProgressTrack) {
+        artistMiniProgressTrack.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const rect = artistMiniProgressTrack.getBoundingClientRect();
+          const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+          const percent = (x / rect.width) * 100;
+          player.seek(percent);
+        });
       }
-    });
-  }
 
-  const columnMiniNextBtn = document.getElementById('columnMiniNextBtn');
-  if (columnMiniNextBtn) {
-    columnMiniNextBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.next();
-    });
-  }
+      const artistMiniPrevBtn = document.getElementById('artistMiniPrevBtn');
+      if (artistMiniPrevBtn) {
+        artistMiniPrevBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.prev();
+        });
+      }
 
-  const columnMiniProgressTrack = document.getElementById('columnMiniProgressTrack');
-  if (columnMiniProgressTrack) {
-    columnMiniProgressTrack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!player || !player.audio || !player.currentTrack) return;
-      const rect = columnMiniProgressTrack.getBoundingClientRect();
-      const clickX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const x = Math.max(0, Math.min(rect.width, clickX - rect.left));
-      const percent = (x / rect.width) * 100;
-      player.seek(percent);
-    });
-  }
+      const artistMiniPlayPauseBtn = document.getElementById('artistMiniPlayPauseBtn');
+      if (artistMiniPlayPauseBtn) {
+        artistMiniPlayPauseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (allTracks.length === 0) {
+            handleAddMusic();
+          } else {
+            player.togglePlay();
+          }
+        });
+      }
 
-  const columnMiniCoverWrapper = document.getElementById('columnMiniCoverWrapper');
-  if (columnMiniCoverWrapper) {
-    columnMiniCoverWrapper.addEventListener('click', (e) => {
-      e.stopPropagation();
-      renderExpandedPlayerView();
-    });
-  }
+      const artistMiniNextBtn = document.getElementById('artistMiniNextBtn');
+      if (artistMiniNextBtn) {
+        artistMiniNextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.next();
+        });
+      }
 
-  // Unified Scroll Listener for Column View (PC View Only)
-  const columnViewUnifiedScroll = document.getElementById('columnViewUnifiedScroll');
-  if (columnViewUnifiedScroll) {
-    columnViewUnifiedScroll.addEventListener('scroll', () => {
-      if (!isColumnViewActive) return;
-      updateSliderThumbFromSongListScroll();
-    }, { passive: true });
-  }
+      // Dedicated Artist / Library Mini Player Fav Button Handler
+      const artistMiniFavBtn = document.getElementById('artistMiniFavBtn');
+      if (artistMiniFavBtn) {
+        artistMiniFavBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!player.currentTrack) {
+            showToast('No song playing');
+            return;
+          }
+          const added = toggleFavourite(player.currentTrack.id);
+          showToast(added ? 'Added to Favourites' : 'Removed from Favourites');
+          if (currentView === 'favourites') {
+            renderFavouritesView();
+          }
+        });
+      }
 
-  // ==========================================================================
-  // EXPANDED PLAYER / FULL PLAYER VIEW (PC VIEW ONLY - Artist1.png & Artist2.png)
-  // ==========================================================================
-  let previousViewBeforeExpanded = 'all_songs';
-  let previousSelectedArtist = null;
-  let previousSelectedAlbum = null;
-  let previousSelectedGenre = null;
-  let previousActivePlaylistId = null;
-  let previousWasColumnView = false;
+      // Dedicated Column View Mini Player Controls & Seeking (Image 2)
+      const columnMiniPrevBtn = document.getElementById('columnMiniPrevBtn');
+      if (columnMiniPrevBtn) {
+        columnMiniPrevBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.prev();
+        });
+      }
 
-  function renderExpandedPlayerView() {
-    if (!player || !player.currentTrack) {
-      showToast('No song playing');
-      return;
-    }
+      const columnMiniPlayPauseBtn = document.getElementById('columnMiniPlayPauseBtn');
+      if (columnMiniPlayPauseBtn) {
+        columnMiniPlayPauseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (allTracks.length === 0) {
+            handleAddMusic();
+          } else {
+            player.togglePlay();
+          }
+        });
+      }
 
-    previousWasColumnView = isColumnViewActive;
-    if (isColumnViewActive) {
-      exitColumnView();
-    }
+      const columnMiniNextBtn = document.getElementById('columnMiniNextBtn');
+      if (columnMiniNextBtn) {
+        columnMiniNextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.next();
+        });
+      }
 
-    if (currentView !== 'expanded_player') {
-      previousViewBeforeExpanded = currentView || 'all_songs';
-      previousSelectedArtist = selectedArtistName;
-      previousSelectedAlbum = selectedAlbumName;
-      previousSelectedGenre = selectedGenre;
-      previousActivePlaylistId = activePlaylistId;
-    }
+      const columnMiniProgressTrack = document.getElementById('columnMiniProgressTrack');
+      if (columnMiniProgressTrack) {
+        columnMiniProgressTrack.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!player || !player.audio || !player.currentTrack) return;
+          const rect = columnMiniProgressTrack.getBoundingClientRect();
+          const clickX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const x = Math.max(0, Math.min(rect.width, clickX - rect.left));
+          const percent = (x / rect.width) * 100;
+          player.seek(percent);
+        });
+      }
 
-    currentView = 'expanded_player';
+      const columnMiniCoverWrapper = document.getElementById('columnMiniCoverWrapper');
+      if (columnMiniCoverWrapper) {
+        columnMiniCoverWrapper.addEventListener('click', (e) => {
+          e.stopPropagation();
+          renderExpandedPlayerView();
+        });
+      }
 
-    // Synchronize navbar active states
-    document.querySelectorAll('.menu-item-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
+      // Unified Scroll Listener for Column View (PC View Only)
+      const columnViewUnifiedScroll = document.getElementById('columnViewUnifiedScroll');
+      if (columnViewUnifiedScroll) {
+        columnViewUnifiedScroll.addEventListener('scroll', () => {
+          if (!isColumnViewActive) return;
+          updateSliderThumbFromSongListScroll();
+        }, { passive: true });
+      }
 
-    updateViewSelectorLabel('Explore / Library');
+      // ==========================================================================
+      // EXPANDED PLAYER / FULL PLAYER VIEW (PC VIEW ONLY - Artist1.png & Artist2.png)
+      // ==========================================================================
+      let previousViewBeforeExpanded = 'all_songs';
+      let previousSelectedArtist = null;
+      let previousSelectedAlbum = null;
+      let previousSelectedGenre = null;
+      let previousActivePlaylistId = null;
+      let previousWasColumnView = false;
 
-    prepareViewTransition('expandedPlayerLeftSection', ['expanded-player-view-active']);
+      function renderExpandedPlayerView() {
+        if (!player || !player.currentTrack) {
+          showToast('No song playing');
+          return;
+        }
 
-    // Toggle Right Section Sub-views
-    const exploreRightNav = document.getElementById('exploreRightNav');
-    const libraryEq = document.querySelector('.library-equalizer-bars');
-    const libraryHeader = document.querySelector('.library-header');
-    const expandedPlayerRightSection = document.getElementById('expandedPlayerRightSection');
-    const miniPlayer = document.getElementById('artistMiniPlayer');
-    const columnMiniPlayer = document.getElementById('columnMiniPlayer');
-    const columnViewSingleBar = document.getElementById('columnViewSingleBar');
+        previousWasColumnView = isColumnViewActive;
+        if (isColumnViewActive) {
+          exitColumnView();
+        }
 
-    if (exploreRightNav) exploreRightNav.style.display = 'none';
-    if (libraryEq) libraryEq.style.display = 'none';
-    if (libraryHeader) libraryHeader.style.display = 'none';
-    if (songsListContainer) songsListContainer.style.display = 'none';
-    if (pcLyricsContainer) pcLyricsContainer.style.display = 'none';
-    if (columnViewSingleBar) columnViewSingleBar.style.display = 'none';
-    if (expandedPlayerRightSection) expandedPlayerRightSection.style.display = 'flex';
-    if (miniPlayer) {
-      miniPlayer.classList.remove('visible');
-      miniPlayer.style.display = 'none';
-    }
-    if (columnMiniPlayer) {
-      columnMiniPlayer.style.display = 'none';
-    }
+        if (currentView !== 'expanded_player') {
+          previousViewBeforeExpanded = currentView || 'all_songs';
+          previousSelectedArtist = selectedArtistName;
+          previousSelectedAlbum = selectedAlbumName;
+          previousSelectedGenre = selectedGenre;
+          previousActivePlaylistId = activePlaylistId;
+        }
 
-    // Filter pills (All | Shuffle) in left panel
-    if (filterAllBtn) {
-      filterAllBtn.textContent = 'All';
-      filterAllBtn.classList.add('active');
-    }
-    if (filterColumnBtn) {
-      filterColumnBtn.style.display = 'none';
-    }
-    if (filterShuffleBtn) {
-      filterShuffleBtn.textContent = 'Shuffle';
-      filterShuffleBtn.classList.remove('active');
-    }
+        currentView = 'expanded_player';
 
-    // 1. Populate Left: Top Albums of current artist
-    populateExpandedTopAlbums();
+        // Synchronize navbar active states
+        document.querySelectorAll('.menu-item-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
 
-    // 2. Populate Left: User Playlists
-    populateExpandedPlaylists();
+        updateViewSelectorLabel('Explore / Library');
 
-    // 3. Populate Right: Artist Bio & Stats
-    populateExpandedArtistDetails();
+        prepareViewTransition('expandedPlayerLeftSection', ['expanded-player-view-active']);
 
-    // 4. Populate Right: Favourite State
-    updateExpandedFavButtonState();
+        // Toggle Right Section Sub-views
+        const exploreRightNav = document.getElementById('exploreRightNav');
+        const libraryEq = document.querySelector('.library-equalizer-bars');
+        const libraryHeader = document.querySelector('.library-header');
+        const expandedPlayerRightSection = document.getElementById('expandedPlayerRightSection');
+        const miniPlayer = document.getElementById('artistMiniPlayer');
+        const columnMiniPlayer = document.getElementById('columnMiniPlayer');
+        const columnViewSingleBar = document.getElementById('columnViewSingleBar');
 
-    // 5. Populate Right: Large Artwork & Visual Lyrics
-    updateExpandedMediaUI();
-    updateExpandedCoverLyrics(true);
+        if (exploreRightNav) exploreRightNav.style.display = 'none';
+        if (libraryEq) libraryEq.style.display = 'none';
+        if (libraryHeader) libraryHeader.style.display = 'none';
+        if (songsListContainer) songsListContainer.style.display = 'none';
+        if (pcLyricsContainer) pcLyricsContainer.style.display = 'none';
+        if (columnViewSingleBar) columnViewSingleBar.style.display = 'none';
+        if (expandedPlayerRightSection) expandedPlayerRightSection.style.display = 'flex';
+        if (miniPlayer) {
+          miniPlayer.classList.remove('visible');
+          miniPlayer.style.display = 'none';
+        }
+        if (columnMiniPlayer) {
+          columnMiniPlayer.style.display = 'none';
+        }
 
-    // 6. Populate Right: Up Next Queue
-    renderExpandedPlayerUpNext();
+        // Filter pills (All | Shuffle) in left panel
+        if (filterAllBtn) {
+          filterAllBtn.textContent = 'All';
+          filterAllBtn.classList.add('active');
+        }
+        if (filterColumnBtn) {
+          filterColumnBtn.style.display = 'none';
+        }
+        if (filterShuffleBtn) {
+          filterShuffleBtn.textContent = 'Shuffle';
+          filterShuffleBtn.classList.remove('active');
+        }
 
-    // 7. Update Controls & Progress
-    if (player) {
-      player.updatePlayPauseUI();
-      player.updateProgressUI();
-    }
-  }
+        // 1. Populate Left: Top Albums of current artist
+        populateExpandedTopAlbums();
 
-  function collapseExpandedPlayerView() {
-    const expandedPlayerLeftSection = document.getElementById('expandedPlayerLeftSection');
-    const expandedPlayerRightSection = document.getElementById('expandedPlayerRightSection');
-    const libraryHeader = document.querySelector('.library-header');
-    const libraryEq = document.querySelector('.library-equalizer-bars');
+        // 2. Populate Left: User Playlists
+        populateExpandedPlaylists();
 
-    if (expandedPlayerLeftSection) expandedPlayerLeftSection.style.display = 'none';
-    if (expandedPlayerRightSection) expandedPlayerRightSection.style.display = 'none';
-    if (libraryHeader) libraryHeader.style.display = 'flex';
-    if (libraryEq) libraryEq.style.display = 'flex';
+        // 3. Populate Right: Artist Bio & Stats
+        populateExpandedArtistDetails();
 
-    const playerBody = document.querySelector('.player-body');
-    if (playerBody) {
-      playerBody.classList.remove('expanded-player-view-active');
-    }
+        // 4. Populate Right: Favourite State
+        updateExpandedFavButtonState();
 
-    if (previousWasColumnView) {
-      previousWasColumnView = false;
-      renderColumnView();
-      return;
-    }
+        // 5. Populate Right: Large Artwork & Visual Lyrics
+        updateExpandedMediaUI();
+        updateExpandedCoverLyrics(true);
 
-    // Restore previous view
-    const targetView = previousViewBeforeExpanded || 'all_songs';
-    if (targetView === 'artist_main') {
-      renderArtistMainView();
-    } else if (targetView === 'artist_detail') {
-      renderArtistDetailView(previousSelectedArtist);
-    } else if (targetView === 'albums_main') {
-      renderAlbumsMainView();
-    } else if (targetView === 'album_detail') {
-      renderAlbumDetailView(previousSelectedAlbum);
-    } else if (targetView === 'favourites') {
-      renderFavouritesView();
-    } else if (targetView === 'genre') {
-      renderGenreView(previousSelectedGenre);
-    } else if (targetView === 'playlists') {
-      renderPlaylistsView();
-    } else if (targetView === 'playlist_songs') {
-      renderPlaylistSongsView(previousActivePlaylistId);
-    } else if (targetView === 'explore') {
-      renderExploreView();
-    } else if (targetView === 'folders_main') {
-      renderFoldersMainView();
-    } else if (targetView === 'folder_detail') {
-      renderFolderDetailView(selectedFolderName);
-    } else if (targetView === 'recorder') {
-      renderRecorderView();
-    } else if (targetView === 'home') {
-      renderHomePage();
-    } else {
-      setAllFilter();
-    }
+        // 6. Populate Right: Up Next Queue
+        renderExpandedPlayerUpNext();
 
-    if (window.updateArtistMiniPlayerVisibility) {
-      window.updateArtistMiniPlayerVisibility();
-    }
-  }
+        // 7. Update Controls & Progress
+        if (player) {
+          player.updatePlayPauseUI();
+          player.updateProgressUI();
+        }
+      }
 
-  function populateExpandedTopAlbums() {
-    const grid = document.getElementById('expandedTopAlbumsGrid');
-    if (!grid) return;
+      function collapseExpandedPlayerView() {
+        const expandedPlayerLeftSection = document.getElementById('expandedPlayerLeftSection');
+        const expandedPlayerRightSection = document.getElementById('expandedPlayerRightSection');
+        const libraryHeader = document.querySelector('.library-header');
+        const libraryEq = document.querySelector('.library-equalizer-bars');
 
-    const currentArtist = player?.currentTrack?.artist || 'Unknown';
-    const albums = getArtistAlbums(currentArtist);
+        if (expandedPlayerLeftSection) expandedPlayerLeftSection.style.display = 'none';
+        if (expandedPlayerRightSection) expandedPlayerRightSection.style.display = 'none';
+        if (libraryHeader) libraryHeader.style.display = 'flex';
+        if (libraryEq) libraryEq.style.display = 'flex';
 
-    if (albums.length === 0) {
-      grid.innerHTML = '<span style="color:#8E8E93;font-size:13px;grid-column:span 2;padding:10px 0;">No albums found for this artist</span>';
-      return;
-    }
+        const playerBody = document.querySelector('.player-body');
+        if (playerBody) {
+          playerBody.classList.remove('expanded-player-view-active');
+        }
 
-    grid.innerHTML = albums.map(alb => `
+        if (previousWasColumnView) {
+          previousWasColumnView = false;
+          renderColumnView();
+          return;
+        }
+
+        // Restore previous view
+        const targetView = previousViewBeforeExpanded || 'all_songs';
+        if (targetView === 'artist_main') {
+          renderArtistMainView();
+        } else if (targetView === 'artist_detail') {
+          renderArtistDetailView(previousSelectedArtist);
+        } else if (targetView === 'albums_main') {
+          renderAlbumsMainView();
+        } else if (targetView === 'album_detail') {
+          renderAlbumDetailView(previousSelectedAlbum);
+        } else if (targetView === 'favourites') {
+          renderFavouritesView();
+        } else if (targetView === 'genre') {
+          renderGenreView(previousSelectedGenre);
+        } else if (targetView === 'playlists') {
+          renderPlaylistsView();
+        } else if (targetView === 'playlist_songs') {
+          renderPlaylistSongsView(previousActivePlaylistId);
+        } else if (targetView === 'explore') {
+          renderExploreView();
+        } else if (targetView === 'folders_main') {
+          renderFoldersMainView();
+        } else if (targetView === 'folder_detail') {
+          renderFolderDetailView(selectedFolderName);
+        } else if (targetView === 'recorder') {
+          renderRecorderView();
+        } else if (targetView === 'home') {
+          renderHomePage();
+        } else {
+          setAllFilter();
+        }
+
+        if (window.updateArtistMiniPlayerVisibility) {
+          window.updateArtistMiniPlayerVisibility();
+        }
+      }
+
+      function populateExpandedTopAlbums() {
+        const grid = document.getElementById('expandedTopAlbumsGrid');
+        if (!grid) return;
+
+        const currentArtist = player?.currentTrack?.artist || 'Unknown';
+        const albums = getArtistAlbums(currentArtist);
+
+        if (albums.length === 0) {
+          grid.innerHTML = '<span style="color:#8E8E93;font-size:13px;grid-column:span 2;padding:10px 0;">No albums found for this artist</span>';
+          return;
+        }
+
+        grid.innerHTML = albums.map(alb => `
       <div class="expanded-album-card" data-album-name="${escapeHtml(alb.name)}" tabindex="0" role="button" title="Open album: ${escapeHtml(alb.name)}">
         <img src="${alb.coverUrl}" alt="${escapeHtml(alb.name)}" class="expanded-album-cover" loading="lazy" onerror="this.onerror=null;this.src='assets/atsuko.svg';" />
       </div>
     `).join('');
 
-    grid.querySelectorAll('.expanded-album-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const albumName = card.dataset.albumName;
-        if (albumName) {
-          collapseExpandedPlayerView();
-          renderAlbumDetailView(albumName);
+        grid.querySelectorAll('.expanded-album-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const albumName = card.dataset.albumName;
+            if (albumName) {
+              collapseExpandedPlayerView();
+              renderAlbumDetailView(albumName);
+            }
+          });
+        });
+      }
+
+      function populateExpandedPlaylists() {
+        const list = document.getElementById('expandedPlaylistsList');
+        if (!list) return;
+
+        if (!playlists || playlists.length === 0) {
+          list.innerHTML = '<span style="color:#8E8E93;font-size:13px;padding:10px 0;">No playlists created yet</span>';
+          return;
         }
-      });
-    });
-  }
 
-  function populateExpandedPlaylists() {
-    const list = document.getElementById('expandedPlaylistsList');
-    if (!list) return;
-
-    if (!playlists || playlists.length === 0) {
-      list.innerHTML = '<span style="color:#8E8E93;font-size:13px;padding:10px 0;">No playlists created yet</span>';
-      return;
-    }
-
-    list.innerHTML = playlists.map(pl => {
-      const songCount = pl.trackIds ? pl.trackIds.length : (pl.songs ? pl.songs.length : 0);
-      return `
+        list.innerHTML = playlists.map(pl => {
+          const songCount = pl.trackIds ? pl.trackIds.length : (pl.songs ? pl.songs.length : 0);
+          return `
         <div class="expanded-playlist-card" data-playlist-id="${escapeHtml(pl.id)}" tabindex="0" role="button" title="Open playlist: ${escapeHtml(pl.name)}">
           <span class="expanded-playlist-title">${escapeHtml(pl.name)}</span>
           <span class="expanded-playlist-subtitle">//${escapeHtml(pl.creator || (songCount + ' songs'))}</span>
         </div>
       `;
-    }).join('');
+        }).join('');
 
-    list.querySelectorAll('.expanded-playlist-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const plId = card.dataset.playlistId;
-        if (plId) {
-          collapseExpandedPlayerView();
-          renderPlaylistSongsView(plId);
-        }
-      });
-    });
-  }
-
-  function populateExpandedArtistDetails() {
-    const artistNameElem = document.getElementById('expandedArtistName');
-    const artistBioTextElem = document.getElementById('expandedArtistBioText');
-    const artistStatsElem = document.getElementById('expandedArtistStats');
-
-    const currentTrack = player?.currentTrack;
-    const artistName = currentTrack?.artist || 'Unknown Artist';
-
-    if (artistNameElem) artistNameElem.textContent = artistName;
-
-    const bioText = (currentTrack?.artistBio || currentTrack?.comment || '').trim();
-    const isRealBio = Boolean(bioText && !bioText.startsWith('00000') && !bioText.startsWith('ExactAudioCopy'));
-
-    if (artistBioTextElem) {
-      if (isRealBio) {
-        artistBioTextElem.innerHTML = `${escapeHtml(bioText)} <strong class="expanded-artist-more-link">more..</strong>`;
-      } else {
-        artistBioTextElem.textContent = 'No details available for this artist.';
-      }
-    }
-
-    const listeners = currentTrack?.listeners ? String(currentTrack.listeners).trim() : '';
-    const scrobbles = currentTrack?.scrobbles ? String(currentTrack.scrobbles).trim() : '';
-
-    if (artistStatsElem) {
-      if (listeners && scrobbles) {
-        artistStatsElem.innerHTML = `<span>Listeners : ${escapeHtml(listeners)}</span><span>Scrobbles : ${escapeHtml(scrobbles)}</span>`;
-      } else if (listeners) {
-        artistStatsElem.innerHTML = `<span>Listeners : ${escapeHtml(listeners)}</span>`;
-      } else if (scrobbles) {
-        artistStatsElem.innerHTML = `<span>Scrobbles : ${escapeHtml(scrobbles)}</span>`;
-      } else {
-        artistStatsElem.innerHTML = '';
-      }
-    }
-  }
-
-  function updateExpandedFavButtonState() {
-    const favBtn = document.getElementById('expandedFavBtn');
-    if (!favBtn) return;
-    const isFav = player?.currentTrack && isFavourite(player.currentTrack.id);
-    favBtn.classList.toggle('active', Boolean(isFav));
-  }
-
-  function updateExpandedMediaUI() {
-    const currentTrack = player?.currentTrack;
-    const titleText = currentTrack?.title || 'No Songs';
-    const songTitleElem = document.getElementById('expandedSongTitle');
-    const coverImg = document.getElementById('expandedMainCoverImg');
-
-    if (songTitleElem) songTitleElem.textContent = titleText;
-
-    if (coverImg) {
-      const isFallback = !currentTrack?.coverUrl || 
-                         currentTrack.coverUrl.includes('M logo') || 
-                         currentTrack.coverUrl.includes('Group 4');
-      coverImg.src = (!isFallback && currentTrack?.coverUrl) ? currentTrack.coverUrl : 'assets/atsuko.svg';
-      coverImg.alt = titleText;
-      coverImg.className = `expanded-cover-art-img ${isFallback ? 'fallback-art' : ''}`;
-    }
-  }
-
-  // --- Creative Synchronized Lyrics Inside Expanded Player Cover Art ---
-  let lastCoverActiveLyricIndex = -1;
-  let lastCoverTrackId = null;
-
-  function parseSynchronizedLyrics(lyricsText) {
-    if (!lyricsText || typeof lyricsText !== 'string') {
-      return { isSynced: false, lines: [] };
-    }
-
-    const rawLines = lyricsText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-    const timedLines = [];
-
-    for (let i = 0; i < rawLines.length; i++) {
-      const line = rawLines[i];
-      const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-      let match;
-      const timestamps = [];
-      while ((match = timeRegex.exec(line)) !== null) {
-        const mins = parseInt(match[1], 10);
-        const secs = parseInt(match[2], 10);
-        const ms = match[3] ? parseInt(match[3].padEnd(3, '0').slice(0, 3), 10) : 0;
-        timestamps.push(mins * 60 + secs + ms / 1000);
-      }
-
-      const text = line.replace(/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/g, '').trim();
-      if (timestamps.length > 0 && text) {
-        for (const time of timestamps) {
-          timedLines.push({ time, text });
-        }
-      }
-    }
-
-    if (timedLines.length === 0) {
-      return { isSynced: false, lines: [] };
-    }
-
-    timedLines.sort((a, b) => a.time - b.time);
-    return { isSynced: true, lines: timedLines };
-  }
-
-  function getTrackSynchronizedLyrics(track) {
-    if (!track) return { isSynced: false, lines: [] };
-    if (track._parsedSyncedLyrics !== undefined) {
-      return track._parsedSyncedLyrics;
-    }
-
-    if (track.lyrics && track.lyrics.trim()) {
-      track._parsedSyncedLyrics = parseSynchronizedLyrics(track.lyrics);
-      return track._parsedSyncedLyrics;
-    }
-
-    // Lazy load if not checked yet
-    if (track.fileBlob && !track._lyricsChecked && window.ID3Parser) {
-      track._lyricsChecked = true;
-      window.ID3Parser.parse(track.fileBlob).then(meta => {
-        if (meta && meta.lyrics) {
-          track.lyrics = meta.lyrics.trim();
-          track._parsedSyncedLyrics = parseSynchronizedLyrics(track.lyrics);
-          if (window.fileManager) window.fileManager.saveTrackToDB(track);
-          if (player && player.currentTrack && player.currentTrack.id === track.id) {
-            updateExpandedCoverLyrics(true);
-          }
-        }
-      }).catch(() => {});
-    }
-
-    track._parsedSyncedLyrics = { isSynced: false, lines: [] };
-    return track._parsedSyncedLyrics;
-  }
-
-  function groupLyricWords(words) {
-    const chunks = [];
-    const connectors = new Set([
-      'to', 'the', 'a', 'an', 'in', 'on', 'at', 'of', 'for', 'with', 'by', 'from',
-      'up', 'down', 'what', 'you', 'me', 'my', 'your', 'his', 'her', 'our', 'their',
-      'we', 'i', 'it', 'is', 'am', 'are', 'was', 'were', 'be', 'so', 'and', 'or',
-      'but', 'if', 'as', 'that', 'this', 'no', 'not', 'can', 'could', 'would', 'should'
-    ]);
-
-    let i = 0;
-    let largeUsed = 0;
-
-    while (i < words.length) {
-      const remaining = words.length - i;
-      const word = words[i];
-      const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      const isConnector = connectors.has(cleanWord);
-      const nextWord = i + 1 < words.length ? words[i + 1] : null;
-      const nextClean = nextWord ? nextWord.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() : '';
-      const nextIsConnector = connectors.has(nextClean);
-
-      // Case 1: First word or anchor word (len >= 5 or strong word) -> standalone large
-      if ((i === 0 || (word.length >= 6 && remaining <= 3)) && largeUsed < 2 && chunks.length < 5) {
-        chunks.push({ text: word, type: 'large' });
-        largeUsed++;
-        i++;
-        continue;
-      }
-
-      // Case 2: If next word starts a connector phrase and this word is solo -> standalone medium
-      if (nextIsConnector && remaining >= 3 && chunks.length < 5 && !isConnector) {
-        chunks.push({ text: word, type: 'medium' });
-        i++;
-        continue;
-      }
-
-      // Case 3: Next words phrase
-      let groupSize = 2;
-      if (isConnector && remaining >= 4) {
-        groupSize = 3;
-        if (remaining >= 5 && connectors.has(words[i + 2]?.replace(/[^a-zA-Z0-9]/g, '').toLowerCase())) {
-          groupSize = 4;
-        }
-      } else if (remaining === 3) {
-        groupSize = 3;
-      } else if (remaining === 1) {
-        groupSize = 1;
-      }
-
-      // Check if within this group there's a strong anchor word that deserves to be standalone
-      if (groupSize >= 2 && remaining > groupSize) {
-        const lastInGroup = words[i + groupSize - 1];
-        if (lastInGroup.length >= 7 && largeUsed < 2) {
-          groupSize = groupSize - 1;
-        }
-      }
-
-      const phrase = words.slice(i, i + groupSize).join(' ');
-      const type = (groupSize === 1 && word.length >= 6 && largeUsed < 2) ? 'large' : 'medium';
-      if (type === 'large') largeUsed++;
-      chunks.push({ text: phrase, type });
-      i += groupSize;
-    }
-
-    // Cap at 6 visual chunks max so it never exceeds the cover height
-    while (chunks.length > 6) {
-      let minIdx = 0;
-      let minLen = 999;
-      for (let c = 0; c < chunks.length - 1; c++) {
-        const len = chunks[c].text.length + chunks[c + 1].text.length;
-        if (len < minLen) {
-          minLen = len;
-          minIdx = c;
-        }
-      }
-      chunks[minIdx] = {
-        text: `${chunks[minIdx].text} ${chunks[minIdx + 1].text}`,
-        type: chunks[minIdx].type === 'large' || chunks[minIdx + 1].type === 'large' ? 'large' : 'medium'
-      };
-      chunks.splice(minIdx + 1, 1);
-    }
-
-    return chunks;
-  }
-
-  function formatCreativeLyricLine(rawText, isFullScreen = false) {
-    if (!rawText) return '';
-    const clean = rawText.replace(/^\[.*?\]\s*/g, '').replace(/\[\d+:\d+(?:\.\d+)?\]/g, '').trim();
-    if (!clean) return '';
-
-    const words = clean.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return '';
-
-    let chunks = [];
-    if (words.length === 1) {
-      chunks = [{ text: words[0], type: 'huge' }];
-    } else if (words.length === 2) {
-      chunks = [
-        { text: words[0], type: 'large' },
-        { text: words[1], type: 'medium' }
-      ];
-    } else if (words.length === 3) {
-      if (words[0].length <= 3) {
-        chunks = [
-          { text: `${words[0]} ${words[1]}`, type: 'medium' },
-          { text: words[2], type: 'large' }
-        ];
-      } else {
-        chunks = [
-          { text: words[0], type: 'large' },
-          { text: `${words[1]} ${words[2]}`, type: 'medium' }
-        ];
-      }
-    } else {
-      chunks = groupLyricWords(words);
-    }
-
-    if (isFullScreen) {
-      return chunks.map(chunk => `<span class="full-view-lyric-chunk lyric-chunk-${chunk.type}">${escapeHtml(chunk.text)}</span>`).join('');
-    }
-
-    const totalChunks = chunks.length;
-    return chunks.map((chunk) => {
-      let baseFontSize = 18;
-      let fontWeight = 600;
-      let color = '#D6DCE1';
-
-      if (chunk.type === 'huge') {
-        baseFontSize = totalChunks === 1 ? 44 : 38;
-        fontWeight = 800;
-        color = '#FFFFFF';
-      } else if (chunk.type === 'large') {
-        if (totalChunks <= 2) baseFontSize = 36;
-        else if (totalChunks <= 4) baseFontSize = 30;
-        else if (totalChunks <= 5) baseFontSize = 26;
-        else baseFontSize = 22;
-        fontWeight = 800;
-        color = '#F2F5F8';
-      } else {
-        if (totalChunks <= 2) baseFontSize = 24;
-        else if (totalChunks <= 4) baseFontSize = 19;
-        else if (totalChunks <= 5) baseFontSize = 17;
-        else baseFontSize = 15;
-        fontWeight = chunk.text.split(' ').length === 1 ? 700 : 600;
-        color = '#D6DCE1';
-      }
-
-      // Safety scale for long text to ensure it never overflows 214px container width
-      const textLen = chunk.text.length;
-      const maxSafeSize = Math.floor(214 / Math.max(textLen * 0.56, 1));
-      const finalSize = Math.max(13, Math.min(baseFontSize, maxSafeSize));
-
-      return `<span class="lyric-word-chunk lyric-chunk-${chunk.type}" style="font-size: ${finalSize}px; font-weight: ${fontWeight}; color: ${color};">${escapeHtml(chunk.text)}</span>`;
-    }).join('');
-  }
-
-  function updateExpandedCoverLyrics(forceUpdate = false) {
-    if (currentView !== 'expanded_player') return;
-    const overlay = document.getElementById('expandedLyricsVisualOverlay');
-    const textContainer = document.getElementById('expandedLyricsTextLines');
-    if (!overlay || !textContainer) return;
-
-    const currentTrack = player?.currentTrack;
-    if (!currentTrack) {
-      overlay.style.display = 'none';
-      overlay.classList.add('hidden');
-      textContainer.innerHTML = '';
-      lastCoverActiveLyricIndex = -1;
-      lastCoverTrackId = null;
-      return;
-    }
-
-    if (currentTrack.id !== lastCoverTrackId) {
-      lastCoverTrackId = currentTrack.id;
-      lastCoverActiveLyricIndex = -1;
-      textContainer.innerHTML = '';
-    }
-
-    const { isSynced, lines } = getTrackSynchronizedLyrics(currentTrack);
-    if (!isSynced || lines.length === 0) {
-      overlay.style.display = 'none';
-      overlay.classList.add('hidden');
-      textContainer.innerHTML = '';
-      lastCoverActiveLyricIndex = -1;
-      return;
-    }
-
-    // Track has synchronized lyrics: compute active line from player.audio.currentTime
-    const curTime = player?.audio ? player.audio.currentTime : 0;
-    let activeIndex = -1;
-
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].time <= curTime + 0.2) {
-        activeIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    // If before first line
-    if (activeIndex === -1) {
-      if (lines[0].time - curTime < 2.5) {
-        activeIndex = 0;
-      } else {
-        overlay.style.display = 'flex';
-        overlay.classList.remove('hidden');
-        textContainer.innerHTML = '';
-        lastCoverActiveLyricIndex = -1;
-        return;
-      }
-    }
-
-    if (activeIndex === lastCoverActiveLyricIndex && !forceUpdate) {
-      return;
-    }
-
-    lastCoverActiveLyricIndex = activeIndex;
-    overlay.style.display = 'flex';
-    overlay.classList.remove('hidden');
-
-    const activeLine = lines[activeIndex];
-    const html = formatCreativeLyricLine(activeLine.text);
-
-    // Update 3-dots indicator
-    const dotIdx = activeIndex % 3;
-    const dots = document.querySelectorAll('#expandedLyricsDots span');
-    dots.forEach((dot, idx) => {
-      dot.classList.toggle('active', idx === dotIdx);
-    });
-
-    if (forceUpdate || textContainer.innerHTML.trim() === '') {
-      textContainer.innerHTML = html;
-      textContainer.classList.remove('transitioning-out');
-      textContainer.classList.add('transitioning-in');
-      requestAnimationFrame(() => {
-        textContainer.classList.remove('transitioning-in');
-      });
-      return;
-    }
-
-    // Smooth transition
-    textContainer.classList.add('transitioning-out');
-    setTimeout(() => {
-      if (lastCoverActiveLyricIndex === activeIndex) {
-        textContainer.innerHTML = html;
-        textContainer.classList.remove('transitioning-out');
-        textContainer.classList.add('transitioning-in');
-        requestAnimationFrame(() => {
-          textContainer.classList.remove('transitioning-in');
+        list.querySelectorAll('.expanded-playlist-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const plId = card.dataset.playlistId;
+            if (plId) {
+              collapseExpandedPlayerView();
+              renderPlaylistSongsView(plId);
+            }
+          });
         });
       }
-    }, 160);
-  }
 
-  function renderExpandedPlayerUpNext() {
-    const list = document.getElementById('expandedUpNextList');
-    if (!list || !player) return;
+      function populateExpandedArtistDetails() {
+        const artistNameElem = document.getElementById('expandedArtistName');
+        const artistBioTextElem = document.getElementById('expandedArtistBioText');
+        const artistStatsElem = document.getElementById('expandedArtistStats');
 
-    const queue = player.queue || [];
-    const currentIndex = player.currentIndex || 0;
-    const upcomingSongs = queue.slice(currentIndex + 1);
+        const currentTrack = player?.currentTrack;
+        const artistName = currentTrack?.artist || 'Unknown Artist';
 
-    if (upcomingSongs.length === 0) {
-      list.innerHTML = '<div style="color:#8E8E93;font-size:13px;padding:12px 10px;">No upcoming tracks in queue</div>';
-      return;
-    }
+        if (artistNameElem) artistNameElem.textContent = artistName;
 
-    const dotsIconSrc = 'assets/Dark Mode/DarkModeOptionsbtn.svg';
+        const bioText = (currentTrack?.artistBio || currentTrack?.comment || '').trim();
+        const isRealBio = Boolean(bioText && !bioText.startsWith('00000') && !bioText.startsWith('ExactAudioCopy'));
 
-    list.innerHTML = upcomingSongs.map((track, relativeIdx) => {
-      const actualQueueIdx = currentIndex + 1 + relativeIdx;
-      const isFallback = !track.coverUrl || track.coverUrl.includes('M logo') || track.coverUrl.includes('Group 4');
-      const coverSrc = (!isFallback && track.coverUrl) ? track.coverUrl : 'assets/atsuko-no-cover-image.svg';
+        if (artistBioTextElem) {
+          if (isRealBio) {
+            artistBioTextElem.innerHTML = `${escapeHtml(bioText)} <strong class="expanded-artist-more-link">more..</strong>`;
+          } else {
+            artistBioTextElem.textContent = 'No details available for this artist.';
+          }
+        }
 
-      return `
+        const listeners = currentTrack?.listeners ? String(currentTrack.listeners).trim() : '';
+        const scrobbles = currentTrack?.scrobbles ? String(currentTrack.scrobbles).trim() : '';
+
+        if (artistStatsElem) {
+          if (listeners && scrobbles) {
+            artistStatsElem.innerHTML = `<span>Listeners : ${escapeHtml(listeners)}</span><span>Scrobbles : ${escapeHtml(scrobbles)}</span>`;
+          } else if (listeners) {
+            artistStatsElem.innerHTML = `<span>Listeners : ${escapeHtml(listeners)}</span>`;
+          } else if (scrobbles) {
+            artistStatsElem.innerHTML = `<span>Scrobbles : ${escapeHtml(scrobbles)}</span>`;
+          } else {
+            artistStatsElem.innerHTML = '';
+          }
+        }
+      }
+
+      function updateExpandedFavButtonState() {
+        const favBtn = document.getElementById('expandedFavBtn');
+        if (!favBtn) return;
+        const isFav = player?.currentTrack && isFavourite(player.currentTrack.id);
+        favBtn.classList.toggle('active', Boolean(isFav));
+      }
+
+      function updateExpandedMediaUI() {
+        const currentTrack = player?.currentTrack;
+        const titleText = currentTrack?.title || 'No Songs';
+        const songTitleElem = document.getElementById('expandedSongTitle');
+        const coverImg = document.getElementById('expandedMainCoverImg');
+
+        if (songTitleElem) songTitleElem.textContent = titleText;
+
+        if (coverImg) {
+          const isFallback = !currentTrack?.coverUrl ||
+            currentTrack.coverUrl.includes('M logo') ||
+            currentTrack.coverUrl.includes('Group 4');
+          coverImg.src = (!isFallback && currentTrack?.coverUrl) ? currentTrack.coverUrl : 'assets/atsuko.svg';
+          coverImg.alt = titleText;
+          coverImg.className = `expanded-cover-art-img ${isFallback ? 'fallback-art' : ''}`;
+        }
+      }
+
+      // --- Creative Synchronized Lyrics Inside Expanded Player Cover Art ---
+      let lastCoverActiveLyricIndex = -1;
+      let lastCoverTrackId = null;
+
+      function parseSynchronizedLyrics(lyricsText) {
+        if (!lyricsText || typeof lyricsText !== 'string') {
+          return { isSynced: false, lines: [] };
+        }
+
+        const rawLines = lyricsText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        const timedLines = [];
+
+        for (let i = 0; i < rawLines.length; i++) {
+          const line = rawLines[i];
+          const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+          let match;
+          const timestamps = [];
+          while ((match = timeRegex.exec(line)) !== null) {
+            const mins = parseInt(match[1], 10);
+            const secs = parseInt(match[2], 10);
+            const ms = match[3] ? parseInt(match[3].padEnd(3, '0').slice(0, 3), 10) : 0;
+            timestamps.push(mins * 60 + secs + ms / 1000);
+          }
+
+          const text = line.replace(/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/g, '').trim();
+          if (timestamps.length > 0 && text) {
+            for (const time of timestamps) {
+              timedLines.push({ time, text });
+            }
+          }
+        }
+
+        if (timedLines.length === 0) {
+          return { isSynced: false, lines: [] };
+        }
+
+        timedLines.sort((a, b) => a.time - b.time);
+        return { isSynced: true, lines: timedLines };
+      }
+
+      function getTrackSynchronizedLyrics(track) {
+        if (!track) return { isSynced: false, lines: [] };
+        if (track._parsedSyncedLyrics !== undefined) {
+          return track._parsedSyncedLyrics;
+        }
+
+        if (track.lyrics && track.lyrics.trim()) {
+          track._parsedSyncedLyrics = parseSynchronizedLyrics(track.lyrics);
+          return track._parsedSyncedLyrics;
+        }
+
+        // Lazy load if not checked yet
+        if (track.fileBlob && !track._lyricsChecked && window.ID3Parser) {
+          track._lyricsChecked = true;
+          window.ID3Parser.parse(track.fileBlob).then(meta => {
+            if (meta && meta.lyrics) {
+              track.lyrics = meta.lyrics.trim();
+              track._parsedSyncedLyrics = parseSynchronizedLyrics(track.lyrics);
+              if (window.fileManager) window.fileManager.saveTrackToDB(track);
+              if (player && player.currentTrack && player.currentTrack.id === track.id) {
+                updateExpandedCoverLyrics(true);
+              }
+            }
+          }).catch(() => { });
+        }
+
+        track._parsedSyncedLyrics = { isSynced: false, lines: [] };
+        return track._parsedSyncedLyrics;
+      }
+
+      function groupLyricWords(words) {
+        const chunks = [];
+        const connectors = new Set([
+          'to', 'the', 'a', 'an', 'in', 'on', 'at', 'of', 'for', 'with', 'by', 'from',
+          'up', 'down', 'what', 'you', 'me', 'my', 'your', 'his', 'her', 'our', 'their',
+          'we', 'i', 'it', 'is', 'am', 'are', 'was', 'were', 'be', 'so', 'and', 'or',
+          'but', 'if', 'as', 'that', 'this', 'no', 'not', 'can', 'could', 'would', 'should'
+        ]);
+
+        let i = 0;
+        let largeUsed = 0;
+
+        while (i < words.length) {
+          const remaining = words.length - i;
+          const word = words[i];
+          const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const isConnector = connectors.has(cleanWord);
+          const nextWord = i + 1 < words.length ? words[i + 1] : null;
+          const nextClean = nextWord ? nextWord.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() : '';
+          const nextIsConnector = connectors.has(nextClean);
+
+          // Case 1: First word or anchor word (len >= 5 or strong word) -> standalone large
+          if ((i === 0 || (word.length >= 6 && remaining <= 3)) && largeUsed < 2 && chunks.length < 5) {
+            chunks.push({ text: word, type: 'large' });
+            largeUsed++;
+            i++;
+            continue;
+          }
+
+          // Case 2: If next word starts a connector phrase and this word is solo -> standalone medium
+          if (nextIsConnector && remaining >= 3 && chunks.length < 5 && !isConnector) {
+            chunks.push({ text: word, type: 'medium' });
+            i++;
+            continue;
+          }
+
+          // Case 3: Next words phrase
+          let groupSize = 2;
+          if (isConnector && remaining >= 4) {
+            groupSize = 3;
+            if (remaining >= 5 && connectors.has(words[i + 2]?.replace(/[^a-zA-Z0-9]/g, '').toLowerCase())) {
+              groupSize = 4;
+            }
+          } else if (remaining === 3) {
+            groupSize = 3;
+          } else if (remaining === 1) {
+            groupSize = 1;
+          }
+
+          // Check if within this group there's a strong anchor word that deserves to be standalone
+          if (groupSize >= 2 && remaining > groupSize) {
+            const lastInGroup = words[i + groupSize - 1];
+            if (lastInGroup.length >= 7 && largeUsed < 2) {
+              groupSize = groupSize - 1;
+            }
+          }
+
+          const phrase = words.slice(i, i + groupSize).join(' ');
+          const type = (groupSize === 1 && word.length >= 6 && largeUsed < 2) ? 'large' : 'medium';
+          if (type === 'large') largeUsed++;
+          chunks.push({ text: phrase, type });
+          i += groupSize;
+        }
+
+        // Cap at 6 visual chunks max so it never exceeds the cover height
+        while (chunks.length > 6) {
+          let minIdx = 0;
+          let minLen = 999;
+          for (let c = 0; c < chunks.length - 1; c++) {
+            const len = chunks[c].text.length + chunks[c + 1].text.length;
+            if (len < minLen) {
+              minLen = len;
+              minIdx = c;
+            }
+          }
+          chunks[minIdx] = {
+            text: `${chunks[minIdx].text} ${chunks[minIdx + 1].text}`,
+            type: chunks[minIdx].type === 'large' || chunks[minIdx + 1].type === 'large' ? 'large' : 'medium'
+          };
+          chunks.splice(minIdx + 1, 1);
+        }
+
+        return chunks;
+      }
+
+      function formatCreativeLyricLine(rawText, isFullScreen = false) {
+        if (!rawText) return '';
+        const clean = rawText.replace(/^\[.*?\]\s*/g, '').replace(/\[\d+:\d+(?:\.\d+)?\]/g, '').trim();
+        if (!clean) return '';
+
+        const words = clean.split(/\s+/).filter(Boolean);
+        if (words.length === 0) return '';
+
+        let chunks = [];
+        if (words.length === 1) {
+          chunks = [{ text: words[0], type: 'huge' }];
+        } else if (words.length === 2) {
+          chunks = [
+            { text: words[0], type: 'large' },
+            { text: words[1], type: 'medium' }
+          ];
+        } else if (words.length === 3) {
+          if (words[0].length <= 3) {
+            chunks = [
+              { text: `${words[0]} ${words[1]}`, type: 'medium' },
+              { text: words[2], type: 'large' }
+            ];
+          } else {
+            chunks = [
+              { text: words[0], type: 'large' },
+              { text: `${words[1]} ${words[2]}`, type: 'medium' }
+            ];
+          }
+        } else {
+          chunks = groupLyricWords(words);
+        }
+
+        if (isFullScreen) {
+          return chunks.map(chunk => `<span class="full-view-lyric-chunk lyric-chunk-${chunk.type}">${escapeHtml(chunk.text)}</span>`).join('');
+        }
+
+        const totalChunks = chunks.length;
+        return chunks.map((chunk) => {
+          let baseFontSize = 18;
+          let fontWeight = 600;
+          let color = '#D6DCE1';
+
+          if (chunk.type === 'huge') {
+            baseFontSize = totalChunks === 1 ? 44 : 38;
+            fontWeight = 800;
+            color = '#FFFFFF';
+          } else if (chunk.type === 'large') {
+            if (totalChunks <= 2) baseFontSize = 36;
+            else if (totalChunks <= 4) baseFontSize = 30;
+            else if (totalChunks <= 5) baseFontSize = 26;
+            else baseFontSize = 22;
+            fontWeight = 800;
+            color = '#F2F5F8';
+          } else {
+            if (totalChunks <= 2) baseFontSize = 24;
+            else if (totalChunks <= 4) baseFontSize = 19;
+            else if (totalChunks <= 5) baseFontSize = 17;
+            else baseFontSize = 15;
+            fontWeight = chunk.text.split(' ').length === 1 ? 700 : 600;
+            color = '#D6DCE1';
+          }
+
+          // Safety scale for long text to ensure it never overflows 214px container width
+          const textLen = chunk.text.length;
+          const maxSafeSize = Math.floor(214 / Math.max(textLen * 0.56, 1));
+          const finalSize = Math.max(13, Math.min(baseFontSize, maxSafeSize));
+
+          return `<span class="lyric-word-chunk lyric-chunk-${chunk.type}" style="font-size: ${finalSize}px; font-weight: ${fontWeight}; color: ${color};">${escapeHtml(chunk.text)}</span>`;
+        }).join('');
+      }
+
+      function updateExpandedCoverLyrics(forceUpdate = false) {
+        if (currentView !== 'expanded_player') return;
+        const overlay = document.getElementById('expandedLyricsVisualOverlay');
+        const textContainer = document.getElementById('expandedLyricsTextLines');
+        if (!overlay || !textContainer) return;
+
+        const currentTrack = player?.currentTrack;
+        if (!currentTrack) {
+          overlay.style.display = 'none';
+          overlay.classList.add('hidden');
+          textContainer.innerHTML = '';
+          lastCoverActiveLyricIndex = -1;
+          lastCoverTrackId = null;
+          return;
+        }
+
+        if (currentTrack.id !== lastCoverTrackId) {
+          lastCoverTrackId = currentTrack.id;
+          lastCoverActiveLyricIndex = -1;
+          textContainer.innerHTML = '';
+        }
+
+        const { isSynced, lines } = getTrackSynchronizedLyrics(currentTrack);
+        if (!isSynced || lines.length === 0) {
+          overlay.style.display = 'none';
+          overlay.classList.add('hidden');
+          textContainer.innerHTML = '';
+          lastCoverActiveLyricIndex = -1;
+          return;
+        }
+
+        // Track has synchronized lyrics: compute active line from player.audio.currentTime
+        const curTime = player?.audio ? player.audio.currentTime : 0;
+        let activeIndex = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].time <= curTime + 0.2) {
+            activeIndex = i;
+          } else {
+            break;
+          }
+        }
+
+        // If before first line
+        if (activeIndex === -1) {
+          if (lines[0].time - curTime < 2.5) {
+            activeIndex = 0;
+          } else {
+            overlay.style.display = 'flex';
+            overlay.classList.remove('hidden');
+            textContainer.innerHTML = '';
+            lastCoverActiveLyricIndex = -1;
+            return;
+          }
+        }
+
+        if (activeIndex === lastCoverActiveLyricIndex && !forceUpdate) {
+          return;
+        }
+
+        lastCoverActiveLyricIndex = activeIndex;
+        overlay.style.display = 'flex';
+        overlay.classList.remove('hidden');
+
+        const activeLine = lines[activeIndex];
+        const html = formatCreativeLyricLine(activeLine.text);
+
+        // Update 3-dots indicator
+        const dotIdx = activeIndex % 3;
+        const dots = document.querySelectorAll('#expandedLyricsDots span');
+        dots.forEach((dot, idx) => {
+          dot.classList.toggle('active', idx === dotIdx);
+        });
+
+        if (forceUpdate || textContainer.innerHTML.trim() === '') {
+          textContainer.innerHTML = html;
+          textContainer.classList.remove('transitioning-out');
+          textContainer.classList.add('transitioning-in');
+          requestAnimationFrame(() => {
+            textContainer.classList.remove('transitioning-in');
+          });
+          return;
+        }
+
+        // Smooth transition
+        textContainer.classList.add('transitioning-out');
+        setTimeout(() => {
+          if (lastCoverActiveLyricIndex === activeIndex) {
+            textContainer.innerHTML = html;
+            textContainer.classList.remove('transitioning-out');
+            textContainer.classList.add('transitioning-in');
+            requestAnimationFrame(() => {
+              textContainer.classList.remove('transitioning-in');
+            });
+          }
+        }, 160);
+      }
+
+      function renderExpandedPlayerUpNext() {
+        const list = document.getElementById('expandedUpNextList');
+        if (!list || !player) return;
+
+        const queue = player.queue || [];
+        const currentIndex = player.currentIndex || 0;
+        const upcomingSongs = queue.slice(currentIndex + 1);
+
+        if (upcomingSongs.length === 0) {
+          list.innerHTML = '<div style="color:#8E8E93;font-size:13px;padding:12px 10px;">No upcoming tracks in queue</div>';
+          return;
+        }
+
+        const dotsIconSrc = 'assets/Dark Mode/DarkModeOptionsbtn.svg';
+
+        list.innerHTML = upcomingSongs.map((track, relativeIdx) => {
+          const actualQueueIdx = currentIndex + 1 + relativeIdx;
+          const isFallback = !track.coverUrl || track.coverUrl.includes('M logo') || track.coverUrl.includes('Group 4');
+          const coverSrc = (!isFallback && track.coverUrl) ? track.coverUrl : 'assets/atsuko-no-cover-image.svg';
+
+          return `
         <div class="expanded-queue-item" data-queue-index="${actualQueueIdx}" tabindex="0" role="button" title="Play ${escapeHtml(track.title)}">
           <img src="${coverSrc}" alt="${escapeHtml(track.title)}" class="expanded-queue-thumb ${isFallback ? 'fallback-logo' : ''}" loading="lazy" onerror="this.onerror=null;this.src='assets/atsuko-no-cover-image.svg';" />
           <div class="expanded-queue-info">
@@ -7799,2620 +9201,3577 @@ document.addEventListener('DOMContentLoaded', async () => {
           </button>
         </div>
       `;
-    }).join('');
+        }).join('');
 
-    list.querySelectorAll('.expanded-queue-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        const optionsBtn = e.target.closest('.expanded-queue-options-btn');
-        if (optionsBtn) {
-          e.stopPropagation();
-          const songId = optionsBtn.dataset.songId;
-          const song = allTracks.find(t => t.id === songId);
-          if (song) showSongContextMenu(e, song);
-          return;
-        }
-        const idx = parseInt(item.dataset.queueIndex, 10);
-        if (!isNaN(idx)) {
-          player.playTrackAt(idx);
-          renderExpandedPlayerUpNext();
-          updateExpandedMediaUI();
-          populateExpandedTopAlbums();
-          populateExpandedArtistDetails();
-        }
-      });
-    });
-  }
-
-  window.updateExpandedPlayerUpNext = renderExpandedPlayerUpNext;
-
-  // Mini Player Cover Art Click -> Open Expanded Player View
-  const artistMiniCoverCard = document.getElementById('artistMiniCoverCard');
-  if (artistMiniCoverCard) {
-    artistMiniCoverCard.addEventListener('click', (e) => {
-      e.stopPropagation();
-      renderExpandedPlayerView();
-    });
-  }
-
-  // Expanded Player Back Button (← Player)
-  const expandedPlayerBackBtn = document.getElementById('expandedPlayerBackBtn');
-  if (expandedPlayerBackBtn) {
-    expandedPlayerBackBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      collapseExpandedPlayerView();
-    });
-  }
-
-  // Up Next Collapse Button (v)
-  const expandedUpNextCollapseBtn = document.getElementById('expandedUpNextCollapseBtn');
-  if (expandedUpNextCollapseBtn) {
-    expandedUpNextCollapseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      collapseExpandedPlayerView();
-    });
-  }
-
-  // Expanded Favourite Button
-  const expandedFavBtn = document.getElementById('expandedFavBtn');
-  if (expandedFavBtn) {
-    expandedFavBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!player?.currentTrack) {
-        showToast('No song playing');
-        return;
-      }
-      const added = toggleFavourite(player.currentTrack.id);
-      showToast(added ? 'Added to Favourites' : 'Removed from Favourites');
-      updateExpandedFavButtonState();
-      updateMiniPlayerFavUI();
-    });
-  }
-
-  // Expanded Play Next Button
-  const expandedPlayNextBtn = document.getElementById('expandedPlayNextBtn');
-  if (expandedPlayNextBtn) {
-    expandedPlayNextBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!player?.currentTrack) {
-        showToast('No song playing');
-        return;
-      }
-      // Insert current track after current index in queue
-      if (player.queue) {
-        const curIdx = player.currentIndex || 0;
-        player.queue.splice(curIdx + 1, 0, player.currentTrack);
-        showToast('Playing next in queue');
-        renderExpandedPlayerUpNext();
-      }
-    });
-  }
-
-  // Expanded Player Transport Buttons
-  const expandedPrevBtn = document.getElementById('expandedPrevBtn');
-  if (expandedPrevBtn) {
-    expandedPrevBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.prev();
-    });
-  }
-
-  const expandedPlayPauseBtn = document.getElementById('expandedPlayPauseBtn');
-  if (expandedPlayPauseBtn) {
-    expandedPlayPauseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.togglePlay();
-    });
-  }
-
-  const expandedNextBtn = document.getElementById('expandedNextBtn');
-  if (expandedNextBtn) {
-    expandedNextBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.next();
-    });
-  }
-
-  // Expanded Progress Track Seeking
-  const expandedProgressTrack = document.getElementById('expandedProgressTrack');
-  if (expandedProgressTrack) {
-    expandedProgressTrack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!player || !player.audio || !player.currentTrack) return;
-      const rect = expandedProgressTrack.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const width = rect.width;
-      const percent = Math.max(0, Math.min(1, clickX / width));
-      const dur = player.audio.duration || player.currentTrack.duration || 0;
-      if (dur > 0) {
-        player.seek(percent * dur);
-      }
-    });
-  }
-
-  // Horizontal Wheel Scrolling for Genre Chips
-  const expandedGenresScrollContainer = document.getElementById('expandedGenresScrollContainer');
-  if (expandedGenresScrollContainer) {
-    expandedGenresScrollContainer.addEventListener('wheel', (e) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        expandedGenresScrollContainer.scrollLeft += e.deltaY;
-      }
-    }, { passive: false });
-  }
-
-  // Genre Chips selection in Expanded Player
-  document.querySelectorAll('.expanded-genre-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('.expanded-genre-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-    });
-  });
-
-  // Track Change hook to keep Expanded Player, Column View & PC Views fresh
-  window.onMusicoTrackChange = function(track) {
-    updateMiniPlayerFavUI();
-    if (currentView === 'expanded_player') {
-      populateExpandedTopAlbums();
-      populateExpandedArtistDetails();
-      updateExpandedFavButtonState();
-      updateExpandedMediaUI();
-      updateExpandedCoverLyrics(true);
-      renderExpandedPlayerUpNext();
-    } else if (window.innerWidth > 900) {
-      if (currentView === 'playlist_songs') {
-        if (currentPlaylistSongsMode === 2) renderPcLyricsView();
-        else if (currentPlaylistSongsMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+        list.querySelectorAll('.expanded-queue-item').forEach(item => {
+          item.addEventListener('click', (e) => {
+            const optionsBtn = e.target.closest('.expanded-queue-options-btn');
+            if (optionsBtn) {
+              e.stopPropagation();
+              const songId = optionsBtn.dataset.songId;
+              const song = allTracks.find(t => t.id === songId);
+              if (song) showSongContextMenu(e, song);
+              return;
+            }
+            const idx = parseInt(item.dataset.queueIndex, 10);
+            if (!isNaN(idx)) {
+              player.playTrackAt(idx);
+              renderExpandedPlayerUpNext();
+              updateExpandedMediaUI();
+              populateExpandedTopAlbums();
+              populateExpandedArtistDetails();
+            }
           });
-        } else if (currentPlaylistSongsMode === 4) renderPcQueueView();
-      } else if (currentView === 'artist_detail') {
-        if (currentArtistDetailMode === 2) renderPcLyricsView();
-        else if (currentArtistDetailMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
-          });
-        } else if (currentArtistDetailMode === 4) renderPcQueueView();
-      } else if (currentView === 'album_detail') {
-        if (currentAlbumDetailMode === 2) renderPcLyricsView();
-        else if (currentAlbumDetailMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
-          });
-        } else if (currentAlbumDetailMode === 4) renderPcQueueView();
-      } else if (currentView === 'favourites') {
-        if (currentFavouritesMode === 2) renderPcLyricsView();
-        else if (currentFavouritesMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
-          });
-        } else if (currentFavouritesMode === 4) renderPcQueueView();
-      } else if (currentView === 'genre') {
-        if (currentGenreMode === 2) renderPcLyricsView();
-        else if (currentGenreMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
-          });
-        } else if (currentGenreMode === 4) renderPcQueueView();
-      } else if (currentView === 'folder_detail') {
-        if (currentFoldersPcMode === 2) renderPcLyricsView();
-        else if (currentFoldersPcMode === 3) {
-          document.querySelectorAll('.masonry-card').forEach(card => {
-            card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
-          });
-        } else if (currentFoldersPcMode === 4) renderPcQueueView();
-      } else if (currentView === 'home') {
-        renderHomeRecentPlaysSection();
-        if (window.updateColumnMiniPlayerVisibility) {
-          window.updateColumnMiniPlayerVisibility();
-        }
-      } else {
-        if (currentPcMode === 2) {
-          renderPcLyricsView();
-        } else if (currentPcMode === 3) {
-          renderPcMasonryGridView();
-        } else if (currentPcMode === 4) {
-          renderPcQueueView();
-        }
-      }
-    }
-
-    if (isColumnViewActive || currentView === 'home') {
-      if (isColumnViewActive) {
-        document.querySelectorAll('.masonry-card').forEach(card => {
-          card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
         });
       }
-      if (window.updateColumnMiniPlayerVisibility) {
-        window.updateColumnMiniPlayerVisibility();
+
+      window.updateExpandedPlayerUpNext = renderExpandedPlayerUpNext;
+
+      // Mini Player Cover Art Click -> Open Expanded Player View
+      const artistMiniCoverCard = document.getElementById('artistMiniCoverCard');
+      if (artistMiniCoverCard) {
+        artistMiniCoverCard.addEventListener('click', (e) => {
+          e.stopPropagation();
+          renderExpandedPlayerView();
+        });
       }
-    }
-  };
 
-  // Global helper to manage Artist / Library Mini Player slide-up entrance animation & visibility
-  window.updateArtistMiniPlayerVisibility = function() {
-    const miniPlayer = document.getElementById('artistMiniPlayer');
-    if (!miniPlayer) return;
-
-    if (isColumnViewActive) {
-      miniPlayer.classList.remove('visible');
-      miniPlayer.style.display = 'none';
-      if (window.updateColumnMiniPlayerVisibility) {
-        window.updateColumnMiniPlayerVisibility();
+      // Expanded Player Back Button (← Player)
+      const expandedPlayerBackBtn = document.getElementById('expandedPlayerBackBtn');
+      if (expandedPlayerBackBtn) {
+        expandedPlayerBackBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          collapseExpandedPlayerView();
+        });
       }
-      return;
-    }
 
-    const isMiniPlayerActiveView = ['explore', 'playlists', 'artist_main', 'artist_detail', 'artist_detail_now_playing', 'albums_main', 'album_detail', 'favourites', 'genre', 'folders_main', 'folder_detail', 'recorder'].includes(currentView);
-    const hasTrack = Boolean(player && player.currentTrack);
-    const isPC = window.innerWidth > 900;
+      // Up Next Collapse Button (v)
+      const expandedUpNextCollapseBtn = document.getElementById('expandedUpNextCollapseBtn');
+      if (expandedUpNextCollapseBtn) {
+        expandedUpNextCollapseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          collapseExpandedPlayerView();
+        });
+      }
 
-    if (currentView === 'expanded_player') {
-      miniPlayer.classList.remove('visible');
-      miniPlayer.style.display = 'none';
-      return;
-    }
+      // Expanded Favourite Button
+      const expandedFavBtn = document.getElementById('expandedFavBtn');
+      if (expandedFavBtn) {
+        expandedFavBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!player?.currentTrack) {
+            showToast('No song playing');
+            return;
+          }
+          const added = toggleFavourite(player.currentTrack.id);
+          showToast(added ? 'Added to Favourites' : 'Removed from Favourites');
+          updateExpandedFavButtonState();
+          updateMiniPlayerFavUI();
+        });
+      }
 
-    if (isMiniPlayerActiveView && hasTrack && isPC) {
-      miniPlayer.style.display = 'flex';
-      requestAnimationFrame(() => {
-        miniPlayer.classList.add('visible');
+      // Expanded Play Next Button
+      const expandedPlayNextBtn = document.getElementById('expandedPlayNextBtn');
+      if (expandedPlayNextBtn) {
+        expandedPlayNextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!player?.currentTrack) {
+            showToast('No song playing');
+            return;
+          }
+          // Insert current track after current index in queue
+          if (player.queue) {
+            const curIdx = player.currentIndex || 0;
+            player.queue.splice(curIdx + 1, 0, player.currentTrack);
+            showToast('Playing next in queue');
+            renderExpandedPlayerUpNext();
+          }
+        });
+      }
+
+      // Expanded Player Transport Buttons
+      const expandedPrevBtn = document.getElementById('expandedPrevBtn');
+      if (expandedPrevBtn) {
+        expandedPrevBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.prev();
+        });
+      }
+
+      const expandedPlayPauseBtn = document.getElementById('expandedPlayPauseBtn');
+      if (expandedPlayPauseBtn) {
+        expandedPlayPauseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.togglePlay();
+        });
+      }
+
+      const expandedNextBtn = document.getElementById('expandedNextBtn');
+      if (expandedNextBtn) {
+        expandedNextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          player.next();
+        });
+      }
+
+      // Expanded Progress Track Seeking
+      const expandedProgressTrack = document.getElementById('expandedProgressTrack');
+      if (expandedProgressTrack) {
+        expandedProgressTrack.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!player || !player.audio || !player.currentTrack) return;
+          const rect = expandedProgressTrack.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const width = rect.width;
+          const percent = Math.max(0, Math.min(1, clickX / width));
+          const dur = player.audio.duration || player.currentTrack.duration || 0;
+          if (dur > 0) {
+            player.seek(percent * dur);
+          }
+        });
+      }
+
+      // Horizontal Wheel Scrolling for Genre Chips
+      const expandedGenresScrollContainer = document.getElementById('expandedGenresScrollContainer');
+      if (expandedGenresScrollContainer) {
+        expandedGenresScrollContainer.addEventListener('wheel', (e) => {
+          if (e.deltaY !== 0) {
+            e.preventDefault();
+            expandedGenresScrollContainer.scrollLeft += e.deltaY;
+          }
+        }, { passive: false });
+      }
+
+      // Genre Chips selection in Expanded Player
+      document.querySelectorAll('.expanded-genre-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('.expanded-genre-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+        });
       });
-      if (songsListContainer) {
-        songsListContainer.classList.add('has-mini-player');
-      }
-      updateMiniPlayerFavUI();
-    } else {
-      miniPlayer.classList.remove('visible');
-      if (songsListContainer) {
-        songsListContainer.classList.remove('has-mini-player');
-      }
-      setTimeout(() => {
-        if (!miniPlayer.classList.contains('visible')) {
+
+      // Track Change hook to keep Expanded Player, Column View & PC Views fresh
+      window.onMusicoTrackChange = function (track) {
+        updateMiniPlayerFavUI();
+        if (currentView === 'expanded_player') {
+          populateExpandedTopAlbums();
+          populateExpandedArtistDetails();
+          updateExpandedFavButtonState();
+          updateExpandedMediaUI();
+          updateExpandedCoverLyrics(true);
+          renderExpandedPlayerUpNext();
+        } else if (window.innerWidth > 900) {
+          if (currentView === 'playlist_songs') {
+            if (currentPlaylistSongsMode === 2) renderPcLyricsView();
+            else if (currentPlaylistSongsMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentPlaylistSongsMode === 4) renderPcQueueView();
+          } else if (currentView === 'artist_detail') {
+            if (currentArtistDetailMode === 2) renderPcLyricsView();
+            else if (currentArtistDetailMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentArtistDetailMode === 4) renderPcQueueView();
+          } else if (currentView === 'album_detail') {
+            if (currentAlbumDetailMode === 2) renderPcLyricsView();
+            else if (currentAlbumDetailMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentAlbumDetailMode === 4) renderPcQueueView();
+          } else if (currentView === 'favourites') {
+            if (currentFavouritesMode === 2) renderPcLyricsView();
+            else if (currentFavouritesMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentFavouritesMode === 4) renderPcQueueView();
+          } else if (currentView === 'genre') {
+            if (currentGenreMode === 2) renderPcLyricsView();
+            else if (currentGenreMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentGenreMode === 4) renderPcQueueView();
+          } else if (currentView === 'folder_detail') {
+            if (currentFoldersPcMode === 2) renderPcLyricsView();
+            else if (currentFoldersPcMode === 3) {
+              document.querySelectorAll('.masonry-card').forEach(card => {
+                card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+              });
+            } else if (currentFoldersPcMode === 4) renderPcQueueView();
+          } else if (currentView === 'home') {
+            renderHomeRecentPlaysSection();
+            if (window.updateColumnMiniPlayerVisibility) {
+              window.updateColumnMiniPlayerVisibility();
+            }
+          } else {
+            if (currentPcMode === 2) {
+              renderPcLyricsView();
+            } else if (currentPcMode === 3) {
+              renderPcMasonryGridView();
+            } else if (currentPcMode === 4) {
+              renderPcQueueView();
+            }
+          }
+        }
+
+        if (isColumnViewActive || currentView === 'home') {
+          if (isColumnViewActive) {
+            document.querySelectorAll('.masonry-card').forEach(card => {
+              card.classList.toggle('is-current', player.currentTrack && card.dataset.id === player.currentTrack.id);
+            });
+          }
+          if (window.updateColumnMiniPlayerVisibility) {
+            window.updateColumnMiniPlayerVisibility();
+          }
+        }
+      };
+
+      // Global helper to manage Artist / Library Mini Player slide-up entrance animation & visibility
+      window.updateArtistMiniPlayerVisibility = function () {
+        const miniPlayer = document.getElementById('artistMiniPlayer');
+        if (!miniPlayer) return;
+
+        if (isColumnViewActive) {
+          miniPlayer.classList.remove('visible');
           miniPlayer.style.display = 'none';
+          if (window.updateColumnMiniPlayerVisibility) {
+            window.updateColumnMiniPlayerVisibility();
+          }
+          return;
         }
-      }, 450);
-    }
-  };
 
-  // Dedicated Column View & Home Page Mini Player Visibility Helper
-  window.updateColumnMiniPlayerVisibility = function() {
-    const colMini = document.getElementById('columnMiniPlayer');
-    const artistMini = document.getElementById('artistMiniPlayer');
-    if (!colMini) return;
+        const isMiniPlayerActiveView = ['explore', 'playlists', 'artist_main', 'artist_detail', 'artist_detail_now_playing', 'albums_main', 'album_detail', 'favourites', 'genre', 'folders_main', 'folder_detail', 'recorder'].includes(currentView);
+        const hasTrack = Boolean(player && player.currentTrack);
+        const isPC = window.innerWidth > 900;
 
-    const isPC = window.innerWidth > 900;
-    const hasTrack = Boolean(player && player.currentTrack);
-    const isHomeOrColumn = isColumnViewActive || currentView === 'home';
+        if (currentView === 'expanded_player') {
+          miniPlayer.classList.remove('visible');
+          miniPlayer.style.display = 'none';
+          return;
+        }
 
-    if (isHomeOrColumn && hasTrack && isPC) {
-      if (artistMini) {
-        artistMini.classList.remove('visible');
-        artistMini.style.display = 'none';
-      }
-      colMini.style.display = 'flex';
-    } else {
-      colMini.style.display = 'none';
-    }
-  };
-
-  // Search Modal / Input (Desktop, Mobile & Home buttons)
-  let wasSearchOpenedFromHome = false;
-
-  function openSearchOverlay(fromHome = false) {
-    wasSearchOpenedFromHome = fromHome || (currentView === 'home');
-    if (wasSearchOpenedFromHome) {
-      setAllFilter();
-    }
-    if (searchOverlay) {
-      searchOverlay.classList.add('open');
-      enterSearchHistory();
-      if (searchInput) {
-        searchInput.focus();
-        searchInput.value = searchQuery;
-      }
-    }
-  }
-
-  function closeSearchOverlay() {
-    if (searchOverlay) searchOverlay.classList.remove('open');
-    if (wasSearchOpenedFromHome && !searchQuery.trim()) {
-      wasSearchOpenedFromHome = false;
-      renderHomePage();
-    }
-  }
-
-  const allSearchBtns = [searchBtn, document.getElementById('mobileSearchBtn'), document.getElementById('homeSearchBtn')].filter(Boolean);
-  allSearchBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openSearchOverlay(btn.id === 'homeSearchBtn');
-    });
-  });
-
-  if (closeSearchBtn && searchOverlay) {
-    closeSearchBtn.addEventListener('click', () => {
-      closeSearchOverlay();
-    });
-  }
-
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      searchQuery = e.target.value;
-      renderSongList();
-      if (searchQuery.trim().length > 0) {
-        enterSearchHistory();
-      }
-    });
-  }
-
-  // Settings Modal (Desktop, Mobile Side Button & Home Button)
-  const allSettingsBtns = [settingsBtn, document.getElementById('mobileSideSettingsBtn'), document.getElementById('homeSettingsBtn')].filter(Boolean);
-  allSettingsBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (settingsModal) settingsModal.classList.add('open');
-    });
-  });
-
-  if (closeSettingsBtn && settingsModal) {
-    closeSettingsBtn.addEventListener('click', () => {
-      settingsModal.classList.remove('open');
-    });
-  }
-
-  // Theme Switching Logic
-  function applyTheme(theme) {
-    currentTheme = theme === 'dark' ? 'dark' : 'light';
-    document.body.setAttribute('data-theme', currentTheme);
-    localStorage.setItem('musico-theme', currentTheme);
-
-    const themeLightBtn = document.getElementById('themeLightBtn');
-    const themeDarkBtn = document.getElementById('themeDarkBtn');
-    if (themeLightBtn) themeLightBtn.classList.toggle('active', currentTheme === 'light');
-    if (themeDarkBtn) themeDarkBtn.classList.toggle('active', currentTheme === 'dark');
-
-    const isDark = currentTheme === 'dark';
-
-    // Update Search icons
-    document.querySelectorAll('#searchBtn img, #mobileSearchBtn img, #homeSearchBtn img').forEach(img => {
-      img.src = isDark ? 'assets/Dark Mode/DarkModeSearchIcon.png' : 'assets/Search.png';
-    });
-
-    // Update Settings icon in desktop header
-    document.querySelectorAll('#settingsBtn img, #homeSettingsBtn img').forEach(img => {
-      img.src = isDark ? 'assets/Dark Mode/DarkModeSettings.png' : 'assets/Settings.png';
-    });
-
-    // Update Now Playing cover 3-dots
-    document.querySelectorAll('#nowPlayingOptionsBtn img, #mobileFullOptionsBtn img').forEach(img => {
-      img.src = isDark ? 'assets/Dark Mode/DarkModeOptions 3 Dots.svg' : 'assets/Options 3 Dots.svg';
-    });
-
-    // Update Prev buttons
-    document.querySelectorAll('#prevBtn img, #mobileFullPrevBtn img, #mobilePopupPrevBtn img').forEach(img => {
-      img.src = isDark ? 'assets/Dark Mode/DarkModePrevBtn.svg' : 'assets/Prevbtn.svg';
-    });
-
-    // Update Next buttons
-    document.querySelectorAll('#nextBtn img, #mobileFullNextBtn img, #mobilePopupNextBtn img').forEach(img => {
-      img.src = isDark ? 'assets/Dark Mode/DarkModeNxtBtn.svg' : 'assets/Nxtbtn.svg';
-    });
-
-    // Update Explore / Library SVGs for Dark / Light mode
-    const exploreArtistBgImg = document.getElementById('exploreArtistBgImg');
-    if (exploreArtistBgImg) {
-      exploreArtistBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
-    }
-    const exploreArtistMiddleImg = document.getElementById('exploreArtistMiddleImg');
-    if (exploreArtistMiddleImg) {
-      exploreArtistMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
-    }
-    const exploreRecorderImg = document.getElementById('exploreRecorderImg');
-    if (exploreRecorderImg) {
-      exploreRecorderImg.src = isDark ? 'assets/LibraryItems/RecorderWholeGraphicalInterface-DarkMode.svg' : 'assets/LibraryItems/RecorderWholeGraphicalInterface.svg';
-    }
-
-    // Update Artist Main and Detail SVGs for Dark / Light mode
-    const artistMainBgImg = document.getElementById('artistMainBgImg');
-    if (artistMainBgImg) {
-      artistMainBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
-    }
-    const artistMainMiddleImg = document.getElementById('artistMainMiddleImg');
-    if (artistMainMiddleImg) {
-      artistMainMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
-    }
-    const artistDetailBgImg = document.getElementById('artistDetailBgImg');
-    if (artistDetailBgImg) {
-      artistDetailBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
-    }
-    const artistDetailMiddleImg = document.getElementById('artistDetailMiddleImg');
-    if (artistDetailMiddleImg) {
-      artistDetailMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
-    }
-
-    // Update Albums Main & Detail SVGs for Dark / Light mode
-    const albumMainBgImg = document.getElementById('albumMainBgImg');
-    if (albumMainBgImg) {
-      albumMainBgImg.src = isDark ? 'assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg' : 'assets/LibraryItems/AlbumGraphicalThing.svg';
-    }
-    const albumDetailBgImg = document.getElementById('albumDetailBgImg');
-    if (albumDetailBgImg) {
-      albumDetailBgImg.src = isDark ? 'assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg' : 'assets/LibraryItems/AlbumGraphicalThing.svg';
-    }
-
-    // Update Song Full View Options 3-dots icon
-    const fullViewOptionsIcon = document.getElementById('fullViewOptionsIcon');
-    if (fullViewOptionsIcon) {
-      fullViewOptionsIcon.src = isDark ? 'assets/OptionsThreeDots.svg' : 'assets/Dark Mode/DarkModeOptionsbtn.svg';
-    }
-
-    if (isColumnViewActive) {
-      renderColumnView();
-    } else if (currentView === 'artist_main') {
-      renderArtistMainView();
-    } else if (currentView === 'artist_detail') {
-      renderArtistDetailView(selectedArtistName);
-    } else if (currentView === 'albums_main') {
-      renderAlbumsMainView();
-    } else if (currentView === 'album_detail') {
-      renderAlbumDetailView(selectedAlbumName);
-    } else if (currentView === 'favourites') {
-      renderFavouritesView();
-    } else if (currentView === 'genre') {
-      renderGenreView(selectedGenre);
-    } else if (currentView === 'folders_main') {
-      renderFoldersMainView();
-    } else if (currentView === 'folder_detail') {
-      renderFolderDetailView(selectedFolderName);
-    } else if (currentView === 'playlists') {
-      renderPlaylistsView();
-    } else if (currentView === 'expanded_player') {
-      renderExpandedPlayerView();
-    } else if (currentView === 'explore') {
-      renderExploreView();
-    } else if (currentView === 'recorder') {
-      renderRecorderView();
-    } else if (currentView === 'home') {
-      renderHomePage();
-    } else {
-      renderSongList();
-    }
-  }
-
-  // Explore / Library target click bindings
-  document.querySelectorAll('[data-explore-target="artists"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderArtistMainView();
-    });
-  });
-
-  document.querySelectorAll('[data-explore-target="albums"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderAlbumsMainView();
-    });
-  });
-
-  document.querySelectorAll('[data-explore-target="favourite"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderFavouritesView();
-    });
-  });
-
-  document.querySelectorAll('[data-explore-target="folders"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderFoldersMainView();
-    });
-  });
-
-  document.querySelectorAll('[data-explore-target="genre"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderGenreView();
-    });
-  });
-
-  document.querySelectorAll('[data-explore-target="recorder"]').forEach(item => {
-    item.addEventListener('click', () => {
-      renderRecorderView();
-    });
-  });
-
-  const exploreArtistItem = document.getElementById('exploreArtistItem');
-  if (exploreArtistItem) {
-    exploreArtistItem.addEventListener('click', () => {
-      renderArtistMainView();
-    });
-  }
-
-  const explorePlaylistItem = document.getElementById('explorePlaylistItem');
-  if (explorePlaylistItem) {
-    explorePlaylistItem.addEventListener('click', () => {
-      renderPlaylistsView();
-    });
-  }
-
-  const exploreFoldersItem = document.getElementById('exploreFoldersItem');
-  if (exploreFoldersItem) {
-    exploreFoldersItem.addEventListener('click', () => {
-      renderFoldersMainView();
-    });
-  }
-
-  const exploreRecorderItem = document.getElementById('exploreRecorderItem');
-  if (exploreRecorderItem) {
-    exploreRecorderItem.addEventListener('click', () => {
-      renderRecorderView();
-    });
-  }
-
-  const themeLightBtn = document.getElementById('themeLightBtn');
-  const themeDarkBtn = document.getElementById('themeDarkBtn');
-  if (themeLightBtn) {
-    themeLightBtn.addEventListener('click', () => {
-      applyTheme('light');
-      showToast('Switched to Light Mode');
-    });
-  }
-  if (themeDarkBtn) {
-    themeDarkBtn.addEventListener('click', () => {
-      applyTheme('dark');
-      showToast('Switched to Dark Mode');
-    });
-  }
-
-  // Close modals when clicking backdrop
-  window.addEventListener('click', (e) => {
-    if (e.target === searchOverlay) closeSearchOverlay();
-    if (e.target === settingsModal) settingsModal.classList.remove('open');
-    if (playlistModal && e.target === playlistModal) closePlaylistModal();
-    if (contextMenu) contextMenu.classList.remove('open');
-    if (playlistContextMenu) playlistContextMenu.classList.remove('open');
-    if (artistContextMenu) artistContextMenu.classList.remove('open');
-    if (albumContextMenu) albumContextMenu.classList.remove('open');
-    if (folderContextMenu) folderContextMenu.classList.remove('open');
-    if (recordingContextMenu) recordingContextMenu.classList.remove('open');
-
-    const homeDropdown = document.getElementById('homeViewDropdownMenu');
-    if (homeDropdown && !e.target.closest('#homeViewSelectorPill') && !e.target.closest('#homeViewDropdownMenu')) {
-      homeDropdown.classList.remove('open');
-    }
-  });
-
-  // Mobile Back Button / Gesture Navigation (Search Results -> Back -> All Songs)
-  window.addEventListener('popstate', () => {
-    if (isSearchHistoryActive || (searchOverlay && searchOverlay.classList.contains('open')) || searchQuery.trim().length > 0) {
-      isSearchHistoryActive = false;
-      setAllFilter();
-    }
-  });
-
-  // Context Menu for song options
-  let contextTrackId = null;
-  let contextIsInPlaylist = false;
-
-  function showContextMenu(e, trackId, isInPlaylist = false) {
-    contextTrackId = trackId;
-    contextIsInPlaylist = isInPlaylist || (currentView === 'playlist_songs');
-    if (!contextMenu) return;
-
-    const removeFromPlBtn = document.getElementById('contextRemoveFromPlaylistBtn');
-    if (removeFromPlBtn) {
-      removeFromPlBtn.style.display = contextIsInPlaylist ? 'block' : 'none';
-    }
-
-    let clientX = e.clientX;
-    let clientY = e.clientY;
-    if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    }
-    if (clientX === undefined || clientY === undefined) {
-      const target = e.currentTarget || e.target;
-      if (target && target.getBoundingClientRect) {
-        const r = target.getBoundingClientRect();
-        clientX = r.left + r.width / 2;
-        clientY = r.bottom;
-      } else {
-        clientX = window.innerWidth / 2;
-        clientY = window.innerHeight / 2;
-      }
-    }
-
-    const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-    const y = Math.min(window.innerHeight - 250, Math.max(10, clientY + 8));
-
-    contextMenu.style.left = `${x}px`;
-    contextMenu.style.top = `${y}px`;
-    contextMenu.classList.add('open');
-  }
-
-  // Playlist context menu for 3-dots on playlist cards
-  const playlistContextMenu = document.getElementById('playlistContextMenu');
-  function showPlaylistContextMenu(e, playlistId) {
-    playlistContextMenuTargetId = playlistId;
-    if (!playlistContextMenu) return;
-
-    let clientX = e.clientX;
-    let clientY = e.clientY;
-    if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    }
-    if (clientX === undefined || clientY === undefined) {
-      const target = e.currentTarget || e.target;
-      if (target && target.getBoundingClientRect) {
-        const r = target.getBoundingClientRect();
-        clientX = r.left + r.width / 2;
-        clientY = r.bottom;
-      } else {
-        clientX = window.innerWidth / 2;
-        clientY = window.innerHeight / 2;
-      }
-    }
-
-    const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-    const y = Math.min(window.innerHeight - 200, Math.max(10, clientY + 8));
-
-    playlistContextMenu.style.left = `${x}px`;
-    playlistContextMenu.style.top = `${y}px`;
-    playlistContextMenu.classList.add('open');
-  }
-
-  // Now Playing cover image 3-dot options buttons (PC & Mobile)
-  const nowPlayingOptionsBtn = document.getElementById('nowPlayingOptionsBtn');
-  const mobileFullOptionsBtn = document.getElementById('mobileFullOptionsBtn');
-  [nowPlayingOptionsBtn, mobileFullOptionsBtn].forEach(btn => {
-    if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (player.currentTrack) {
-          showContextMenu(e, player.currentTrack.id, currentView === 'playlist_songs');
+        if (isMiniPlayerActiveView && hasTrack && isPC) {
+          miniPlayer.style.display = 'flex';
+          requestAnimationFrame(() => {
+            miniPlayer.classList.add('visible');
+          });
+          if (songsListContainer) {
+            songsListContainer.classList.add('has-mini-player');
+          }
+          updateMiniPlayerFavUI();
         } else {
-          showToast('No song is currently playing');
-        }
-      });
-    }
-  });
-
-  // Song Context Menu Actions
-  document.querySelectorAll('#songContextMenu .context-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const action = item.dataset.action;
-      if (!contextTrackId) return;
-
-      const track = allTracks.find(t => t.id === contextTrackId);
-      if (!track) return;
-
-      if (action === 'select') {
-        openSelectMode(contextTrackId);
-      } else if (action === 'add-to-playlist') {
-        openAddToPlaylistModal([contextTrackId]);
-      } else if (action === 'remove-from-playlist') {
-        if (activePlaylistId) {
-          const playlist = playlists.find(p => p.id === activePlaylistId);
-          await fileManager.removeTrackFromPlaylist(activePlaylistId, contextTrackId);
-          playlists = await fileManager.getPlaylists();
-          renderPlaylistSongsView(activePlaylistId);
-          showToast(`Removed "${track.title}" from "${playlist ? playlist.name : 'playlist'}"`);
-        }
-      } else if (action === 'play-next') {
-        const currentIdx = player.currentIndex;
-        const targetIdx = allTracks.findIndex(t => t.id === contextTrackId);
-        if (targetIdx !== -1) {
-          const [moved] = allTracks.splice(targetIdx, 1);
-          allTracks.splice(currentIdx + 1, 0, moved);
-          player.setQueue(allTracks, player.currentIndex, false);
-          if (currentView === 'all_songs') renderSongList();
-          showToast(`"${track.title}" will play next`);
-        }
-      } else if (action === 'info') {
-        alert(`Title: ${track.title}\nArtist: ${track.artist || 'Unknown'}\nAlbum: ${track.album || 'Unknown'}\nDuration: ${track.formattedDuration || 'Unknown'}`);
-      } else if (action === 'delete') {
-        if (confirm(`Remove "${track.title}" from library?`)) {
-          fileManager.deleteTrackFromDB(track.id);
-          if (track.id === localStorage.getItem('musico-last-played-id')) {
-            localStorage.removeItem('musico-last-played-id');
+          miniPlayer.classList.remove('visible');
+          if (songsListContainer) {
+            songsListContainer.classList.remove('has-mini-player');
           }
-          allTracks = allTracks.filter(t => t.id !== track.id);
-          if (allTracks.length === 0) {
-            player.setQueue([], 0, false);
+          setTimeout(() => {
+            if (!miniPlayer.classList.contains('visible')) {
+              miniPlayer.style.display = 'none';
+            }
+          }, 450);
+        }
+      };
+
+      // Dedicated Column View & Home Page Mini Player Visibility Helper
+      window.updateColumnMiniPlayerVisibility = function () {
+        const colMini = document.getElementById('columnMiniPlayer');
+        const artistMini = document.getElementById('artistMiniPlayer');
+        if (!colMini) return;
+
+        const isPC = window.innerWidth > 900;
+        const hasTrack = Boolean(player && player.currentTrack);
+        const isHomeOrColumn = isColumnViewActive || currentView === 'home';
+
+        if (isHomeOrColumn && hasTrack && isPC) {
+          if (artistMini) {
+            artistMini.classList.remove('visible');
+            artistMini.style.display = 'none';
           }
-          if (currentView === 'all_songs') renderSongList();
-          showToast(`Removed "${track.title}"`);
+          colMini.style.display = 'flex';
+        } else {
+          colMini.style.display = 'none';
+        }
+      };
+
+      // Search Modal / Input (Desktop, Mobile & Home buttons)
+      let wasSearchOpenedFromHome = false;
+
+      function openSearchOverlay(fromHome = false) {
+        wasSearchOpenedFromHome = fromHome || (currentView === 'home');
+        if (wasSearchOpenedFromHome) {
+          setAllFilter();
+        }
+        if (searchOverlay) {
+          searchOverlay.classList.add('open');
+          enterSearchHistory();
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.value = searchQuery;
+          }
         }
       }
-      contextMenu.classList.remove('open');
-    });
-  });
 
-  // Playlist Context Menu Actions
-  if (playlistContextMenu) {
-    playlistContextMenu.querySelectorAll('.context-item').forEach(item => {
-      item.addEventListener('click', async () => {
-        const action = item.dataset.action;
-        if (!playlistContextMenuTargetId) return;
+      function closeSearchOverlay() {
+        if (searchOverlay) searchOverlay.classList.remove('open');
+        if (wasSearchOpenedFromHome && !searchQuery.trim()) {
+          wasSearchOpenedFromHome = false;
+          renderHomePage();
+        }
+      }
 
-        const playlist = playlists.find(p => p.id === playlistContextMenuTargetId);
-        if (!playlist) return;
+      const allSearchBtns = [searchBtn, document.getElementById('mobileSearchBtn'), document.getElementById('homeSearchBtn')].filter(Boolean);
+      allSearchBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSearchOverlay(btn.id === 'homeSearchBtn');
+        });
+      });
 
-        if (action === 'play-playlist') {
-          const playlistTracks = (playlist.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
-          if (playlistTracks.length === 0) {
-            showToast('Playlist is empty');
-          } else {
-            player.activePlaylistId = playlist.id;
-            player.activePlaylistName = playlist.name;
-            await fileManager.incrementPlaylistPlayCount(playlist.id);
-            playlists = await fileManager.getPlaylists();
-            player.setQueue(playlistTracks, 0, true);
-            player.updateNowPlayingUI();
-            showToast(`Playing playlist "${playlist.name}"`);
+      if (closeSearchBtn && searchOverlay) {
+        closeSearchBtn.addEventListener('click', () => {
+          closeSearchOverlay();
+        });
+      }
+
+      if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+          searchQuery = e.target.value;
+          renderSongList();
+          if (searchQuery.trim().length > 0) {
+            enterSearchHistory();
           }
-        } else if (action === 'rename-playlist') {
-          const newName = prompt('Enter new playlist name:', playlist.name);
-          if (newName && newName.trim() && newName.trim() !== playlist.name) {
-            playlist.name = newName.trim();
-            await fileManager.savePlaylist(playlist);
-            playlists = await fileManager.getPlaylists();
-            renderPlaylistsView();
-            showToast(`Renamed to "${playlist.name}"`);
+        });
+      }
+
+      // Settings Data Folder Controller
+      function updateSettingsDataFolderUI() {
+        const statusEl = document.getElementById('settingsDataFolderStatus');
+        if (!statusEl) return;
+        if (window.dataFolderService && window.dataFolderService.dirHandle) {
+          statusEl.innerHTML = `<span style="color: #34C759; font-weight: 500;">✓ Connected: ${escapeHtml(window.dataFolderService.dirHandle.name)}</span>`;
+        } else {
+          statusEl.innerHTML = `<span style="color: #FF453A;">Not Connected</span>`;
+        }
+      }
+
+      const changeDataFolderBtn = document.getElementById('settingsChangeDataFolderBtn');
+      if (changeDataFolderBtn) {
+        changeDataFolderBtn.onclick = async () => {
+          // 0. Snapshot previous folder name
+          const prevFolder = (window.dataFolderService && window.dataFolderService.dirHandle && window.dataFolderService.dirHandle.name)
+            || localStorage.getItem('atsuko_current_folder_name')
+            || 'Previous Folder';
+          localStorage.setItem('atsuko_previous_folder_name', prevFolder);
+          if (window.dataFolderService) {
+            window.dataFolderService.previousFolderName = prevFolder;
           }
-        } else if (action === 'delete-playlist') {
-          if (confirm(`Delete playlist "${playlist.name}"? (Songs will remain in your library)`)) {
-            await fileManager.deletePlaylist(playlist.id);
-            playlists = await fileManager.getPlaylists();
-            renderPlaylistsView();
-            showToast(`Deleted playlist "${playlist.name}"`);
+
+          // 1. Snapshot current in-app identity and stats before picking folder
+          const curUname = localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER';
+          const curAvatar = localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg';
+          let curSec = 0;
+          let curPlays = 0;
+          if (fileManager && fileManager._cachedStats) {
+            curSec = Math.round(fileManager._cachedStats.totalListeningSeconds || 0);
+            curPlays = fileManager._cachedStats.totalSongsPlayed || 0;
+          }
+
+          if (window.dataFolderService) {
+            window.dataFolderService.currentInAppProfileSnapshot = { username: curUname, avatar: curAvatar };
+            window.dataFolderService.currentInAppStatsSnapshot = { totalListeningSeconds: curSec, totalSongsPlayed: curPlays };
+            // Clear any stale cached profile/stats from older folders/sessions
+            window.dataFolderService.originalAtuProfile = null;
+            window.dataFolderService.originalAtuStats = null;
+            window.dataFolderService.pendingReconciliation = false;
+            window.dataFolderService.isReconciled = false;
+          }
+
+          const res = await window.onboardingWizard.pickDataFolder();
+          if (res) {
+            const newFolder = (res.handle && res.handle.name) || (window.dataFolderService && window.dataFolderService.dirHandle && window.dataFolderService.dirHandle.name) || 'Connected Folder';
+            localStorage.setItem('atsuko_current_folder_name', newFolder);
+            if (window.dataFolderService) {
+              window.dataFolderService.currentFolderName = newFolder;
+            }
+
+            updateSettingsDataFolderUI();
+            if (res.type === 'restore' && res.data) {
+              const fileProfile = res.data.profile || { username: 'USER', avatar: 'assets/default-avatar.svg' };
+              const fileStats = res.data.stats || { totalListeningSec: 0, songsPlayed: 0 };
+              let fileUname = fileProfile.username || 'USER';
+              if (fileUname === 'v22' || fileUname === 'V22') {
+                fileUname = localStorage.getItem('atsuko_last_valid_username') ||
+                  localStorage.getItem('atsuko_previous_username') ||
+                  (curUname !== 'current' ? curUname : 'new') ||
+                  'new';
+                fileProfile.username = fileUname;
+                res.data.profile.username = fileUname;
+              }
+              const fileSec = Math.round(fileStats.totalListeningSec || 0);
+              const filePlays = fileStats.songsPlayed || 0;
+
+              if (window.dataFolderService) {
+                window.dataFolderService.originalAtuProfile = { username: fileUname, avatar: fileProfile.avatar || 'assets/default-avatar.svg' };
+                window.dataFolderService.originalAtuStats = { totalListeningSec: fileSec, songsPlayed: filePlays };
+
+                // Require reconciliation if the newly found file's profile/stats differ from active in-app state OR if folder changed!
+                if (fileUname !== curUname || fileSec !== curSec || filePlays !== curPlays || (prevFolder && newFolder && prevFolder !== newFolder)) {
+                  window.dataFolderService.pendingReconciliation = true;
+                  window.dataFolderService.isReconciled = false;
+                } else {
+                  window.dataFolderService.pendingReconciliation = false;
+                  window.dataFolderService.isReconciled = true;
+                }
+              }
+
+              await handleRestoreReturningUser(res.data, false, true);
+            } else {
+              if (window.dataFolderService) {
+                window.dataFolderService.pendingReconciliation = false;
+                window.dataFolderService.isReconciled = true;
+              }
+              syncToAtu(true);
+              showToast(`Connected to Data Folder "${newFolder}"`);
+            }
+          }
+        };
+      }
+
+      const viewAtuDataBtn = document.getElementById('settingsViewAtuDataBtn');
+      if (viewAtuDataBtn) {
+        viewAtuDataBtn.onclick = () => {
+          openAtuDataViewerModal();
+        };
+      }
+
+      // =========================================================================
+      // ATSUKO FILE DATA VIEWER & STATS RECONCILIATION CONTROLLER (v138)
+      // =========================================================================
+
+      function closeAtuDataViewerModal() {
+        const modal = document.getElementById('atuDataViewerModal');
+        if (modal) {
+          modal.classList.remove('open');
+          modal.style.display = 'none';
+        }
+      }
+      window.closeAtuDataViewerModal = closeAtuDataViewerModal;
+
+      function formatSecToHoursMins(totalSec) {
+        const sec = Math.round(totalSec || 0);
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (h > 0) return `${h} h ${m} min`;
+        return `${m} min`;
+      }
+
+      function isSongInAtsukoLibrary(song) {
+        if (!song) return false;
+        const songTitle = (song.title || '').trim().toLowerCase();
+        const songSize = song.fingerprint?.size || 0;
+        return allTracks.some(t => {
+          if (t.isMissing) return false;
+          if (song.id && t.id === song.id) return true;
+          const tTitle = (t.title || '').trim().toLowerCase();
+          if (songTitle && tTitle === songTitle) {
+            if (songSize > 0 && t.fileBlob?.size) {
+              if (Math.abs(t.fileBlob.size - songSize) < 100) return true;
+            } else {
+              return true;
+            }
+          }
+          return false;
+        });
+      }
+
+      function refreshAppProfileAndStatsUI(name, avatar) {
+        if (avatar) {
+          const navAvatar = document.querySelector('#profileBadge .profile-avatar-img');
+          if (navAvatar) navAvatar.src = avatar;
+          const homeAvatar = document.getElementById('homeProfileAvatarImg');
+          if (homeAvatar) homeAvatar.src = avatar;
+          const homeGreetingAvatar = document.getElementById('homeGreetingAvatarImg');
+          if (homeGreetingAvatar) homeGreetingAvatar.src = avatar;
+          const profileModalAvatarImg = document.getElementById('profileModalAvatarImg');
+          if (profileModalAvatarImg) profileModalAvatarImg.src = avatar;
+        }
+
+        if (name) {
+          const profileUserNameTitle = document.getElementById('profileUserNameTitle');
+          if (profileUserNameTitle && !profileUserNameTitle.querySelector('input')) {
+            profileUserNameTitle.textContent = name;
+          }
+          const aboutYouUsername = document.getElementById('aboutYouUsername');
+          if (aboutYouUsername) aboutYouUsername.textContent = name;
+          const navProfileUserName = document.getElementById('navProfileUserName') || document.querySelector('#profileBadge .profile-user-name');
+          if (navProfileUserName) navProfileUserName.textContent = name;
+          const homeProfileUserName = document.getElementById('homeProfileUserName');
+          if (homeProfileUserName) homeProfileUserName.textContent = name;
+          const homeGreetingUsername = document.getElementById('homeGreetingUsername');
+          if (homeGreetingUsername) homeGreetingUsername.textContent = name;
+          const profileBadgePill = document.getElementById('profileBadge');
+          if (profileBadgePill) profileBadgePill.title = `User Profile: ${name}`;
+        }
+
+        if (fileManager && fileManager._cachedStats) {
+          const totalSecs = Math.round(fileManager._cachedStats.totalListeningSeconds || 0);
+          const hours = Math.floor(totalSecs / 3600);
+          const mins = Math.floor((totalSecs % 3600) / 60);
+          const formatted = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
+          const totalListeningTimeEl = document.getElementById('totalListeningTime');
+          const songsPlayedEl = document.getElementById('totalSongsPlayed');
+          if (totalListeningTimeEl) totalListeningTimeEl.textContent = formatted;
+          if (songsPlayedEl) songsPlayedEl.textContent = (fileManager._cachedStats.totalSongsPlayed || 0).toLocaleString();
+        }
+      }
+      window.refreshAppProfileAndStatsUI = refreshAppProfileAndStatsUI;
+
+      async function openAtuDataViewerModal() {
+        const modal = document.getElementById('atuDataViewerModal');
+        if (!modal) return;
+
+        if (!window.dataFolderService || !window.dataFolderService.dirHandle) {
+          showToast('Please connect an Atsuko Data Folder first.');
+          return;
+        }
+
+        const fileNameBadge = document.getElementById('atuViewerFileName');
+        const sourceRow = document.getElementById('atuViewerSourceSelectorRow');
+        const sourceSelect = document.getElementById('atuViewerSourceSelect');
+        const closeBtn = document.getElementById('closeAtuViewerModalBtn');
+
+        if (closeBtn) {
+          closeBtn.onclick = closeAtuDataViewerModal;
+        }
+        modal.onclick = (e) => {
+          if (e.target === modal) closeAtuDataViewerModal();
+        };
+
+        const activeFileName = (window.dataFolderService && window.dataFolderService.activeFileName) || 'atsuko.atu';
+        if (fileNameBadge) fileNameBadge.textContent = activeFileName;
+
+        // Read active file
+        const readRes = await window.dataFolderService.readAtuFile(activeFileName);
+        let activeData = readRes.data || window.dataFolderService.cachedData || window.AtuSchema.createDefaultData();
+
+        // Check multi-source
+        const multiSources = window.dataFolderService.multiFileSources || [];
+        if (multiSources.length > 1 && sourceRow && sourceSelect) {
+          sourceRow.style.display = 'flex';
+          sourceSelect.innerHTML = `<option value="__combined__">Combined (${escapeHtml(activeFileName)})</option>` +
+            multiSources.map(s => `<option value="${escapeHtml(s.fileName)}">${escapeHtml(s.fileName)}</option>`).join('');
+          sourceSelect.value = '__combined__';
+          sourceSelect.onchange = () => {
+            if (sourceSelect.value === '__combined__') {
+              renderAtuViewerContent(activeData, activeFileName, false);
+            } else {
+              const found = multiSources.find(s => s.fileName === sourceSelect.value);
+              if (found && found.data) {
+                renderAtuViewerContent(found.data, found.fileName, true);
+              }
+            }
+          };
+        } else if (sourceRow) {
+          sourceRow.style.display = 'none';
+        }
+
+        await renderAtuViewerContent(activeData, activeFileName, false);
+        modal.style.display = 'flex';
+        modal.classList.add('open');
+      }
+      window.openAtuDataViewerModal = openAtuDataViewerModal;
+
+      async function renderAtuViewerContent(data, fileName, isSourceFile = false) {
+        const container = document.getElementById('atuViewerContent');
+        if (!container) return;
+
+        // Current In-App Stats & Profile (Snapshot if pending reconciliation, otherwise live active in-app state)
+        const currentUsername = (window.dataFolderService?.pendingReconciliation && window.dataFolderService.currentInAppProfileSnapshot?.username) ||
+          localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER';
+        const currentAvatar = (window.dataFolderService?.pendingReconciliation && window.dataFolderService.currentInAppProfileSnapshot?.avatar) ||
+          localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg';
+
+        let currentSec = 0;
+        let currentPlays = 0;
+        if (window.dataFolderService?.pendingReconciliation && window.dataFolderService.currentInAppStatsSnapshot) {
+          currentSec = Math.round(window.dataFolderService.currentInAppStatsSnapshot.totalListeningSeconds || 0);
+          currentPlays = window.dataFolderService.currentInAppStatsSnapshot.totalSongsPlayed || 0;
+        } else if (fileManager) {
+          const stats = await fileManager.getPlaybackStats();
+          currentSec = Math.round(stats.totalListeningSeconds || 0);
+          currentPlays = stats.totalSongsPlayed || 0;
+        }
+
+        // Folder origins for clear identification
+        const prevFolderName = (window.dataFolderService && window.dataFolderService.previousFolderName) ||
+          localStorage.getItem('atsuko_previous_folder_name') ||
+          'Current In-App';
+        const newFolderName = (window.dataFolderService && window.dataFolderService.currentFolderName) ||
+          (window.dataFolderService && window.dataFolderService.dirHandle && window.dataFolderService.dirHandle.name) ||
+          localStorage.getItem('atsuko_current_folder_name') ||
+          'Connected Folder';
+
+        // File Stats & Profile (Directly from the connected .atu file data! No stale session cache)
+        let fileUsername = (data && data.profile && data.profile.username) ? data.profile.username : 'USER';
+        if (fileUsername === 'v22' || fileUsername === 'V22') {
+          fileUsername = localStorage.getItem('atsuko_last_valid_username') ||
+            localStorage.getItem('atsuko_previous_username') ||
+            (currentUsername !== 'current' ? currentUsername : 'new') ||
+            'new';
+          if (data && data.profile) data.profile.username = fileUsername;
+          if (window.dataFolderService && window.dataFolderService.originalAtuProfile) {
+            window.dataFolderService.originalAtuProfile.username = fileUsername;
           }
         }
-        playlistContextMenu.classList.remove('open');
-      });
-    });
-  }
+        const fileAvatar = (data && data.profile && data.profile.avatar) ? data.profile.avatar : 'assets/default-avatar.svg';
+        const fileJoined = data?.profile?.joinedAt ? new Date(data.profile.joinedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Unknown';
 
-  // Artist context menu for 3-dots on artist cards
-  const artistContextMenu = document.getElementById('artistContextMenu');
-  function showArtistContextMenu(e, artistName) {
-    artistContextMenuTargetName = artistName;
-    if (!artistContextMenu) return;
+        const fileSec = Math.round((data && data.stats && data.stats.totalListeningSec) || 0);
+        const filePlays = (data && data.stats && data.stats.songsPlayed) || 0;
 
-    let clientX = e.clientX;
-    let clientY = e.clientY;
-    if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    }
-    if (clientX === undefined || clientY === undefined) {
-      const target = e.currentTarget || e.target;
-      if (target && target.getBoundingClientRect) {
-        const r = target.getBoundingClientRect();
-        clientX = r.left + r.width / 2;
-        clientY = r.bottom;
-      } else {
-        clientX = window.innerWidth / 2;
-        clientY = window.innerHeight / 2;
-      }
-    }
+        // The 3 reconciliation buttons are ONLY shown if user moved to a new folder containing a new .atu file
+        const showReconcile = !!(window.dataFolderService && window.dataFolderService.pendingReconciliation);
 
-    const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-    const y = Math.min(window.innerHeight - 150, Math.max(10, clientY + 8));
+        const playlistsList = Array.isArray(data.playlists) ? data.playlists : [];
+        const foldersList = Array.isArray(data.folders) ? data.folders : [];
+        const favsList = Array.isArray(data.favourites) ? data.favourites : [];
+        const songsList = Array.isArray(data.songs) ? data.songs : [];
 
-    artistContextMenu.style.left = `${x}px`;
-    artistContextMenu.style.top = `${y}px`;
-    artistContextMenu.classList.add('open');
-  }
+        let matchedCount = 0;
+        let missingCount = 0;
+        songsList.forEach(s => {
+          if (isSongInAtsukoLibrary(s)) matchedCount++;
+          else missingCount++;
+        });
 
-  // Artist Context Menu Actions (Play this Artist, Delete Artist)
-  if (artistContextMenu) {
-    artistContextMenu.querySelectorAll('.context-item').forEach(item => {
-      item.addEventListener('click', async () => {
-        const action = item.dataset.action;
-        if (!artistContextMenuTargetName) return;
+        container.innerHTML = `
+          <!-- Profile Section (Side-by-side comparison when pending reconcile, full-width single card otherwise) -->
+          <div class="atu-viewer-section">
+            <div class="atu-viewer-section-title">PROFILE IDENTITIES</div>
+            <div id="atuProfileCardsGrid" style="display: grid; grid-template-columns: ${showReconcile ? '1fr 1fr' : '1fr'}; gap: 12px;">
+              ${showReconcile ? `
+              <div class="atu-viewer-profile-card" id="atuPrevProfileCard">
+                <div style="font-size: 11px; color: #8E8E93; font-weight: 600; margin-bottom: 6px;">PREVIOUS FOLDER PROFILE</div>
+                <div class="atu-viewer-profile-row">
+                  <img src="${currentAvatar}" class="atu-viewer-avatar" alt="Previous Avatar" onerror="this.src='assets/default-avatar.svg'" />
+                  <div style="flex: 1; min-width: 0;">
+                    <div class="atu-viewer-username">${escapeHtml(currentUsername)}</div>
+                    <div class="atu-viewer-joined" style="color: #FF9F0A;">Previous Folder &bull; ${escapeHtml(prevFolderName)}</div>
+                  </div>
+                </div>
+              </div>
+              ` : ''}
+              <div class="atu-viewer-profile-card" id="atuFileProfileCard">
+                <div style="font-size: 11px; color: #8E8E93; font-weight: 600; margin-bottom: 6px;">FILE STORED PROFILE</div>
+                <div class="atu-viewer-profile-row">
+                  <img src="${fileAvatar}" class="atu-viewer-avatar" id="atuFileProfileAvatar" alt="File Avatar" onerror="this.src='assets/default-avatar.svg'" />
+                  <div style="flex: 1; min-width: 0;">
+                    <div class="atu-viewer-username" id="atuFileProfileUsername">${escapeHtml(fileUsername)}</div>
+                    <div class="atu-viewer-joined" id="atuFileProfileSubtitle" style="color: #34C759;">In Folder: ${escapeHtml(newFolderName)}</div>
+                  </div>
+                  <span class="atu-viewer-tag">${isSourceFile ? escapeHtml(fileName) : 'In File'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-        const targetArtistName = artistContextMenuTargetName;
-        const artistTracks = allTracks.filter(t => (t.artist || 'Unknown').trim().toLowerCase() === targetArtistName.trim().toLowerCase());
+          <!-- Stats & Reconciliation Section -->
+          <div class="atu-viewer-section">
+            <div class="atu-viewer-section-title">LISTENING STATISTICS</div>
+            <div class="atu-viewer-stats-grid" id="atuViewerStatsGrid" style="display: grid; grid-template-columns: ${showReconcile ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)'}; gap: 10px;">
+              <div class="atu-viewer-stat-box" id="atuStatBoxListening">
+                <span class="atu-stat-val" id="atuStatValListening">${formatSecToHoursMins(fileSec)}</span>
+                <span class="atu-stat-lbl" id="atuStatLblListening">${showReconcile ? 'File Listening' : 'Total Listening Time'}</span>
+              </div>
+              <div class="atu-viewer-stat-box" id="atuStatBoxPlays">
+                <span class="atu-stat-val" id="atuStatValPlays">${filePlays.toLocaleString()}</span>
+                <span class="atu-stat-lbl" id="atuStatLblPlays">${showReconcile ? 'File Songs Played' : 'Total Songs Played'}</span>
+              </div>
+              ${showReconcile ? `
+              <div class="atu-viewer-stat-box" id="atuStatBoxPrevListening">
+                <span class="atu-stat-val" id="atuStatValPrevListening">${formatSecToHoursMins(currentSec)}</span>
+                <span class="atu-stat-lbl" id="atuStatLblPrevListening">Previous In-App</span>
+              </div>
+              <div class="atu-viewer-stat-box" id="atuStatBoxPrevPlays">
+                <span class="atu-stat-val" id="atuStatValPrevPlays">${currentPlays.toLocaleString()}</span>
+                <span class="atu-stat-lbl" id="atuStatLblPrevPlays">Previous Plays</span>
+              </div>
+              ` : ''}
+            </div>
 
-        if (action === 'play-artist') {
-          if (artistTracks.length === 0) {
-            showToast(`No songs found for "${targetArtistName}"`);
-          } else {
-            player.activePlaylistId = null;
-            player.activePlaylistName = null;
-            player.setQueue(artistTracks, 0, true);
-            player.updateNowPlayingUI();
-            showToast(`Playing ${targetArtistName}`);
+            <div class="atu-reconcile-container" id="atuReconcileBox" style="display: ${showReconcile ? 'block' : 'none'};">
+              <div id="atuReconcileTitle" style="font-size: 12px; color: #8E8E93; margin-bottom: 8px;">Reconcile Statistics & Profile:</div>
+              <div class="atu-reconcile-actions" id="atuReconcileButtons">
+                <button class="atu-btn-reconcile" id="atuKeepCurrentBtn" style="display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 14px;">
+                  <span style="font-weight: 600;">Keep Current Stats (${escapeHtml(currentUsername)})</span>
+                  <span style="font-size: 11px; opacity: 0.75; margin-top: 2px;">${escapeHtml(prevFolderName)}</span>
+                </button>
+                <button class="atu-btn-reconcile" id="atuKeepOldBtn" style="display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 14px;">
+                  <span style="font-weight: 600;">Keep Old Stats (${escapeHtml(fileUsername)})</span>
+                  <span style="font-size: 11px; opacity: 0.75; margin-top: 2px;">${escapeHtml(newFolderName)}</span>
+                </button>
+                <button class="atu-btn-reconcile primary" id="atuMergeStatsBtn" style="display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 14px;">
+                  <span style="font-weight: 600;">Merge Stats</span>
+                  <span style="font-size: 11px; opacity: 0.85; margin-top: 2px;">${escapeHtml(prevFolderName)} + ${escapeHtml(newFolderName)}</span>
+                </button>
+              </div>
+              <div id="atuMergeProfileChooser" style="display: none; margin-top: 10px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px;">
+                <div style="font-size: 12px; color: #E5E5EA; margin-bottom: 8px;">Which Profile Identity would you like to keep with merged stats?</div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="atu-btn-reconcile" id="atuPickCurrentProfileBtn">Use Current (${escapeHtml(currentUsername)}) &bull; ${escapeHtml(prevFolderName)}</button>
+                  <button class="atu-btn-reconcile" id="atuPickOldProfileBtn">Use Old (${escapeHtml(fileUsername)}) &bull; ${escapeHtml(newFolderName)}</button>
+                  <button class="welcome-btn-secondary" id="atuCancelMergeBtn" style="padding: 6px 12px; font-size: 12px;">Cancel</button>
+                </div>
+              </div>
+              <div id="atuReconcileConfirmed" style="display: none; margin-top: 8px;" class="atu-stats-confirmed"></div>
+            </div>
+          </div>
+
+          <!-- Playlists & Folders Summary Section -->
+          <div class="atu-viewer-section">
+            <div class="atu-viewer-section-title">PLAYLISTS & IN-APP FOLDERS</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div>
+                <div style="font-size: 12px; font-weight: 600; color: #8E8E93; margin-bottom: 6px;">Playlists (${playlistsList.length})</div>
+                <div class="atu-mini-list">
+                  ${playlistsList.length === 0 ? '<div class="atu-empty-sub">No playlists recorded</div>' :
+                    playlistsList.map(p => `
+                      <div class="atu-mini-item">
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">${escapeHtml(p.name)}</span>
+                        <span class="atu-count-pill">${(p.trackIds || p.songIds || []).length} songs</span>
+                      </div>
+                    `).join('')
+                  }
+                </div>
+              </div>
+              <div>
+                <div style="font-size: 12px; font-weight: 600; color: #8E8E93; margin-bottom: 6px;">Folders (${foldersList.length})</div>
+                <div class="atu-mini-list">
+                  ${foldersList.length === 0 ? '<div class="atu-empty-sub">No folders recorded</div>' :
+                    foldersList.map(f => `
+                      <div class="atu-mini-item">
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">${escapeHtml(f.name)}</span>
+                        <span class="atu-count-pill">${(f.songIds || []).length} songs</span>
+                      </div>
+                    `).join('')
+                  }
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #8E8E93;">
+              Favorites in File: <strong style="color: #FFFFFF;">${favsList.length}</strong>
+            </div>
+          </div>
+
+          <!-- Songs Verification & Match Status Section -->
+          <div class="atu-viewer-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div class="atu-viewer-section-title" style="margin-bottom: 0;">SONGS RECORDED IN FILE (${songsList.length})</div>
+              <div style="font-size: 12px;">
+                <span style="color: #34C759; font-weight: 600;">${matchedCount}</span> Matched &bull; <span style="color: #FF9F0A; font-weight: 600;">${missingCount}</span> Needed
+              </div>
+            </div>
+            <div class="atu-songs-scroll-list">
+              ${songsList.length === 0 ? '<div class="atu-empty-sub" style="padding: 16px; text-align: center;">No songs recorded in this .atu file.</div>' :
+                songsList.map(song => {
+                  const isMatched = isSongInAtsukoLibrary(song);
+                  return `
+                    <div class="atu-song-row ${isMatched ? 'is-matched' : 'is-missing'}">
+                      <span class="atu-match-badge ${isMatched ? 'matched' : 'missing'}">
+                        ${isMatched ? '✓ Matched & Playable' : '○ Not in Library (MP3 needed)'}
+                      </span>
+                      <div class="atu-song-info">
+                        <div class="atu-song-title">${escapeHtml(song.title || 'Untitled')}</div>
+                        <div class="atu-song-artist">${escapeHtml(song.artist || 'Unknown Artist')}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')
+              }
+            </div>
+          </div>
+        `;
+
+        // Hook up reconciliation buttons
+        const keepCurrentBtn = document.getElementById('atuKeepCurrentBtn');
+        const keepOldBtn = document.getElementById('atuKeepOldBtn');
+        const mergeStatsBtn = document.getElementById('atuMergeStatsBtn');
+        const mergeChooser = document.getElementById('atuMergeProfileChooser');
+        const pickCurrentBtn = document.getElementById('atuPickCurrentProfileBtn');
+        const pickOldBtn = document.getElementById('atuPickOldProfileBtn');
+        const cancelMergeBtn = document.getElementById('atuCancelMergeBtn');
+        const confirmedEl = document.getElementById('atuReconcileConfirmed');
+        const buttonsBox = document.getElementById('atuReconcileButtons');
+        const titleEl = document.getElementById('atuReconcileTitle');
+
+        function applyReconciledUI(chosenUsername, chosenAvatar, finalSec, finalPlays, messageText) {
+          // 1. Permanently hide Previous Folder profile card
+          const prevCard = document.getElementById('atuPrevProfileCard');
+          if (prevCard) prevCard.style.display = 'none';
+
+          // 2. Expand File Stored Profile card to 100% full width
+          const cardsGrid = document.getElementById('atuProfileCardsGrid');
+          if (cardsGrid) cardsGrid.style.gridTemplateColumns = '1fr';
+
+          // 3. Update File Stored Profile card identity elements
+          const fileUnameEl = document.getElementById('atuFileProfileUsername');
+          if (fileUnameEl) fileUnameEl.textContent = chosenUsername;
+          const fileAvatarEl = document.getElementById('atuFileProfileAvatar');
+          if (fileAvatarEl) fileAvatarEl.src = chosenAvatar;
+          const fileSubtitleEl = document.getElementById('atuFileProfileSubtitle');
+          if (fileSubtitleEl) fileSubtitleEl.textContent = `In Folder: ${newFolderName}`;
+
+          // 4. Update the Listening Statistics boxes to single reconciled 2-column view
+          const prevSecBox = document.getElementById('atuStatBoxPrevListening');
+          if (prevSecBox) prevSecBox.style.display = 'none';
+          const prevPlaysBox = document.getElementById('atuStatBoxPrevPlays');
+          if (prevPlaysBox) prevPlaysBox.style.display = 'none';
+
+          const statsGrid = document.getElementById('atuViewerStatsGrid');
+          if (statsGrid) statsGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+
+          const valSec = document.getElementById('atuStatValListening');
+          if (valSec) valSec.textContent = formatSecToHoursMins(finalSec);
+          const lblSec = document.getElementById('atuStatLblListening');
+          if (lblSec) lblSec.textContent = 'Total Listening Time';
+
+          const valPlays = document.getElementById('atuStatValPlays');
+          if (valPlays) valPlays.textContent = finalPlays.toLocaleString();
+          const lblPlays = document.getElementById('atuStatLblPlays');
+          if (lblPlays) lblPlays.textContent = 'Total Songs Played';
+
+          // 5. Hide the reconcile buttons & title permanently, show the confirmed banner
+          if (titleEl) titleEl.style.display = 'none';
+          if (buttonsBox) buttonsBox.style.display = 'none';
+          if (mergeChooser) mergeChooser.style.display = 'none';
+
+          if (confirmedEl) {
+            confirmedEl.innerHTML = `<span style="font-size: 15px; margin-right: 6px;">✓</span> ${escapeHtml(messageText)}`;
+            confirmedEl.style.display = 'inline-flex';
           }
-        } else if (action === 'delete-artist') {
-          if (confirm(`Delete artist "${targetArtistName}" and all associated songs from library?`)) {
-            const deletedTrackIds = artistTracks.map(t => t.id);
+        }
 
-            // Delete each track belonging to this artist from IndexedDB
-            for (const track of artistTracks) {
-              await fileManager.deleteTrackFromDB(track.id);
+        if (keepCurrentBtn) {
+          keepCurrentBtn.onclick = async () => {
+            const confirmed = confirm(
+              `Keep Stats from ${prevFolderName} (${currentUsername})?\n\n- Username: ${currentUsername}\n- Listening Time: ${formatSecToHoursMins(currentSec)}\n- Songs Played: ${currentPlays.toLocaleString()}\n\nThis will keep your profile & stats from "${prevFolderName}", and update "${newFolderName}" to match.\n\nThis action cannot be undone. Continue?`
+            );
+            if (!confirmed) return;
+
+            // 1. Update in-app profile
+            localStorage.setItem('musico_profile_username', currentUsername);
+            localStorage.setItem('musico_profile_name', currentUsername);
+            localStorage.setItem('musico_profile_image', currentAvatar);
+            localStorage.setItem('musico_profile_avatar', currentAvatar);
+            refreshAppProfileAndStatsUI(currentUsername, currentAvatar);
+
+            // 2. Update in-app stats
+            if (fileManager) {
+              fileManager._cachedStats = fileManager._cachedStats || {};
+              fileManager._cachedStats.totalListeningSeconds = currentSec;
+              fileManager._cachedStats.totalSongsPlayed = currentPlays;
+              await fileManager.saveSetting('musico_playback_stats', fileManager._cachedStats);
+            }
+
+            // 3. Update file data
+            data.stats = { totalListeningSec: currentSec, songsPlayed: currentPlays };
+            data.profile = data.profile || {};
+            data.profile.username = currentUsername;
+            data.profile.avatar = currentAvatar;
+
+            if (window.dataFolderService) {
+              window.dataFolderService.isReconciled = true;
+              window.dataFolderService.pendingReconciliation = false;
+              window.dataFolderService.originalAtuProfile = { username: currentUsername, avatar: currentAvatar };
+              window.dataFolderService.originalAtuStats = { totalListeningSec: currentSec, songsPlayed: currentPlays };
+              window.dataFolderService.currentInAppProfileSnapshot = { username: currentUsername, avatar: currentAvatar };
+              window.dataFolderService.currentInAppStatsSnapshot = { totalListeningSeconds: currentSec, totalSongsPlayed: currentPlays };
+              await window.dataFolderService.save(data, true);
+            }
+            if (typeof window.syncToAtu === 'function') {
+              window.syncToAtu(true);
+            }
+
+            applyReconciledUI(
+              currentUsername,
+              currentAvatar,
+              currentSec,
+              currentPlays,
+              `Successfully saved stats & profile from ${prevFolderName} (${currentUsername}) into ${newFolderName}.`
+            );
+            showToast(`Applied stats & profile from ${prevFolderName} (${currentUsername})`);
+          };
+        }
+
+        if (keepOldBtn) {
+          keepOldBtn.onclick = async () => {
+            const confirmed = confirm(
+              `Keep Stats from ${newFolderName} (${fileUsername})?\n\n- Username: ${fileUsername}\n- Listening Time: ${formatSecToHoursMins(fileSec)}\n- Songs Played: ${filePlays.toLocaleString()}\n\nThis will replace your current in-app stats and profile with "${newFolderName}"'s file stats:\n- User: ${fileUsername}\n- Listening Time: ${formatSecToHoursMins(fileSec)}\n- Songs Played: ${filePlays.toLocaleString()}\n\nThis action cannot be undone. Continue?`
+            );
+            if (!confirmed) return;
+
+            // 1. Update in-app stats
+            if (fileManager) {
+              fileManager._cachedStats = fileManager._cachedStats || {};
+              fileManager._cachedStats.totalListeningSeconds = fileSec;
+              fileManager._cachedStats.totalSongsPlayed = filePlays;
+              await fileManager.saveSetting('musico_playback_stats', fileManager._cachedStats);
+            }
+
+            // 2. Update in-app profile
+            localStorage.setItem('musico_profile_username', fileUsername);
+            localStorage.setItem('musico_profile_name', fileUsername);
+            localStorage.setItem('musico_profile_image', fileAvatar);
+            localStorage.setItem('musico_profile_avatar', fileAvatar);
+            refreshAppProfileAndStatsUI(fileUsername, fileAvatar);
+
+            // 3. Update file data
+            data.stats = { totalListeningSec: fileSec, songsPlayed: filePlays };
+            data.profile = { username: fileUsername, avatar: fileAvatar };
+
+            if (window.dataFolderService) {
+              window.dataFolderService.isReconciled = true;
+              window.dataFolderService.pendingReconciliation = false;
+              window.dataFolderService.originalAtuProfile = { username: fileUsername, avatar: fileAvatar };
+              window.dataFolderService.originalAtuStats = { totalListeningSec: fileSec, songsPlayed: filePlays };
+              window.dataFolderService.currentInAppProfileSnapshot = { username: fileUsername, avatar: fileAvatar };
+              window.dataFolderService.currentInAppStatsSnapshot = { totalListeningSeconds: fileSec, totalSongsPlayed: filePlays };
+              await window.dataFolderService.save(data, true);
+            }
+            if (typeof window.syncToAtu === 'function') {
+              window.syncToAtu(true);
+            }
+
+            applyReconciledUI(
+              fileUsername,
+              fileAvatar,
+              fileSec,
+              filePlays,
+              `Preserved existing stats & profile from ${newFolderName} (${fileUsername}).`
+            );
+            showToast(`Preserved stats & profile from ${newFolderName} (${fileUsername})`);
+          };
+        }
+
+        if (mergeStatsBtn) {
+          mergeStatsBtn.onclick = () => {
+            if (buttonsBox) buttonsBox.style.display = 'none';
+            if (mergeChooser) mergeChooser.style.display = 'block';
+          };
+        }
+
+        if (cancelMergeBtn) {
+          cancelMergeBtn.onclick = () => {
+            if (mergeChooser) mergeChooser.style.display = 'none';
+            if (buttonsBox) buttonsBox.style.display = 'flex';
+          };
+        }
+
+        async function executeMerge(useCurrentProfile) {
+          const chosenUsername = useCurrentProfile ? currentUsername : fileUsername;
+          const chosenAvatar = useCurrentProfile ? currentAvatar : fileAvatar;
+          const mergedSec = currentSec + fileSec;
+          const mergedPlays = currentPlays + filePlays;
+
+          const confirmed = confirm(
+            `Merge Stats (${prevFolderName} + ${newFolderName}):\n\n- Profile Identity: ${chosenUsername}\n- Total Listening Time: ${formatSecToHoursMins(mergedSec)}\n- Total Songs Played: ${mergedPlays.toLocaleString()}\n\nThis will merge both listening times and play counts and save them into "${newFolderName}".\n\nThis action cannot be undone. Proceed?`
+          );
+          if (!confirmed) return;
+
+          if (fileManager) {
+            fileManager._cachedStats = fileManager._cachedStats || {};
+            fileManager._cachedStats.totalListeningSeconds = mergedSec;
+            fileManager._cachedStats.totalSongsPlayed = mergedPlays;
+            await fileManager.saveSetting('musico_playback_stats', fileManager._cachedStats);
+          }
+
+          localStorage.setItem('musico_profile_username', chosenUsername);
+          localStorage.setItem('musico_profile_name', chosenUsername);
+          localStorage.setItem('musico_profile_image', chosenAvatar);
+          localStorage.setItem('musico_profile_avatar', chosenAvatar);
+          refreshAppProfileAndStatsUI(chosenUsername, chosenAvatar);
+
+          data.stats = { totalListeningSec: mergedSec, songsPlayed: mergedPlays };
+          data.profile = data.profile || {};
+          data.profile.username = chosenUsername;
+          data.profile.avatar = chosenAvatar;
+
+          if (window.dataFolderService) {
+            window.dataFolderService.isReconciled = true;
+            window.dataFolderService.pendingReconciliation = false;
+            window.dataFolderService.originalAtuProfile = { username: chosenUsername, avatar: chosenAvatar };
+            window.dataFolderService.originalAtuStats = { totalListeningSec: mergedSec, songsPlayed: mergedPlays };
+            window.dataFolderService.currentInAppProfileSnapshot = { username: chosenUsername, avatar: chosenAvatar };
+            window.dataFolderService.currentInAppStatsSnapshot = { totalListeningSeconds: mergedSec, totalSongsPlayed: mergedPlays };
+            await window.dataFolderService.save(data, true);
+          }
+          if (typeof window.syncToAtu === 'function') {
+            window.syncToAtu(true);
+          }
+
+          applyReconciledUI(
+            chosenUsername,
+            chosenAvatar,
+            mergedSec,
+            mergedPlays,
+            `Successfully merged stats into ${newFolderName} with profile identity (${chosenUsername}).`
+          );
+          showToast(`Merged stats saved with profile "${chosenUsername}"!`);
+        }
+
+        if (pickCurrentBtn) {
+          pickCurrentBtn.onclick = () => executeMerge(true);
+        }
+        if (pickOldBtn) {
+          pickOldBtn.onclick = () => executeMerge(false);
+        }
+      }
+
+      // Settings Modal (Desktop, Mobile Side Button & Home Button)
+      const allSettingsBtns = [settingsBtn, document.getElementById('mobileSideSettingsBtn'), document.getElementById('homeSettingsBtn')].filter(Boolean);
+      allSettingsBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          updateSettingsDataFolderUI();
+          if (settingsModal) settingsModal.classList.add('open');
+        });
+      });
+
+      if (closeSettingsBtn && settingsModal) {
+        closeSettingsBtn.addEventListener('click', () => {
+          settingsModal.classList.remove('open');
+        });
+      }
+
+      // Theme Switching Logic
+      function applyTheme(theme) {
+        currentTheme = theme === 'dark' ? 'dark' : 'light';
+        document.body.setAttribute('data-theme', currentTheme);
+        localStorage.setItem('musico-theme', currentTheme);
+
+        const themeLightBtn = document.getElementById('themeLightBtn');
+        const themeDarkBtn = document.getElementById('themeDarkBtn');
+        if (themeLightBtn) themeLightBtn.classList.toggle('active', currentTheme === 'light');
+        if (themeDarkBtn) themeDarkBtn.classList.toggle('active', currentTheme === 'dark');
+
+        const isDark = currentTheme === 'dark';
+
+        // Update Search icons
+        document.querySelectorAll('#searchBtn img, #mobileSearchBtn img, #homeSearchBtn img').forEach(img => {
+          img.src = isDark ? 'assets/Dark Mode/DarkModeSearchIcon.png' : 'assets/Search.png';
+        });
+
+        // Update Settings icon in desktop header
+        document.querySelectorAll('#settingsBtn img, #homeSettingsBtn img').forEach(img => {
+          img.src = isDark ? 'assets/Dark Mode/DarkModeSettings.png' : 'assets/Settings.png';
+        });
+
+        // Update Now Playing cover 3-dots
+        document.querySelectorAll('#nowPlayingOptionsBtn img, #mobileFullOptionsBtn img').forEach(img => {
+          img.src = isDark ? 'assets/Dark Mode/DarkModeOptions 3 Dots.svg' : 'assets/Options 3 Dots.svg';
+        });
+
+        // Update Prev buttons
+        document.querySelectorAll('#prevBtn img, #mobileFullPrevBtn img, #mobilePopupPrevBtn img').forEach(img => {
+          img.src = isDark ? 'assets/Dark Mode/DarkModePrevBtn.svg' : 'assets/Prevbtn.svg';
+        });
+
+        // Update Next buttons
+        document.querySelectorAll('#nextBtn img, #mobileFullNextBtn img, #mobilePopupNextBtn img').forEach(img => {
+          img.src = isDark ? 'assets/Dark Mode/DarkModeNxtBtn.svg' : 'assets/Nxtbtn.svg';
+        });
+
+        // Update Explore / Library SVGs for Dark / Light mode
+        const exploreArtistBgImg = document.getElementById('exploreArtistBgImg');
+        if (exploreArtistBgImg) {
+          exploreArtistBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
+        }
+        const exploreArtistMiddleImg = document.getElementById('exploreArtistMiddleImg');
+        if (exploreArtistMiddleImg) {
+          exploreArtistMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
+        }
+        const exploreRecorderImg = document.getElementById('exploreRecorderImg');
+        if (exploreRecorderImg) {
+          exploreRecorderImg.src = isDark ? 'assets/LibraryItems/RecorderWholeGraphicalInterface-DarkMode.svg' : 'assets/LibraryItems/RecorderWholeGraphicalInterface.svg';
+        }
+
+        // Update Artist Main and Detail SVGs for Dark / Light mode
+        const artistMainBgImg = document.getElementById('artistMainBgImg');
+        if (artistMainBgImg) {
+          artistMainBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
+        }
+        const artistMainMiddleImg = document.getElementById('artistMainMiddleImg');
+        if (artistMainMiddleImg) {
+          artistMainMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
+        }
+        const artistDetailBgImg = document.getElementById('artistDetailBgImg');
+        if (artistDetailBgImg) {
+          artistDetailBgImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalBg-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalBg.svg';
+        }
+        const artistDetailMiddleImg = document.getElementById('artistDetailMiddleImg');
+        if (artistDetailMiddleImg) {
+          artistDetailMiddleImg.src = isDark ? 'assets/LibraryItems/ArtistGraphicalMiddleCircle-DarkMode.svg' : 'assets/LibraryItems/ArtistGraphicalMiddleCircle.svg';
+        }
+
+        // Update Albums Main & Detail SVGs for Dark / Light mode
+        const albumMainBgImg = document.getElementById('albumMainBgImg');
+        if (albumMainBgImg) {
+          albumMainBgImg.src = isDark ? 'assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg' : 'assets/LibraryItems/AlbumGraphicalThing.svg';
+        }
+        const albumDetailBgImg = document.getElementById('albumDetailBgImg');
+        if (albumDetailBgImg) {
+          albumDetailBgImg.src = isDark ? 'assets/LibraryItems/AlbumGraphicalThing-DarkMode.svg' : 'assets/LibraryItems/AlbumGraphicalThing.svg';
+        }
+
+        // Update Song Full View Options 3-dots icon
+        const fullViewOptionsIcon = document.getElementById('fullViewOptionsIcon');
+        if (fullViewOptionsIcon) {
+          fullViewOptionsIcon.src = isDark ? 'assets/OptionsThreeDots.svg' : 'assets/Dark Mode/DarkModeOptionsbtn.svg';
+        }
+
+        if (isColumnViewActive) {
+          renderColumnView();
+        } else if (currentView === 'artist_main') {
+          renderArtistMainView();
+        } else if (currentView === 'artist_detail') {
+          renderArtistDetailView(selectedArtistName);
+        } else if (currentView === 'albums_main') {
+          renderAlbumsMainView();
+        } else if (currentView === 'album_detail') {
+          renderAlbumDetailView(selectedAlbumName);
+        } else if (currentView === 'favourites') {
+          renderFavouritesView();
+        } else if (currentView === 'genre') {
+          renderGenreView(selectedGenre);
+        } else if (currentView === 'folders_main') {
+          renderFoldersMainView();
+        } else if (currentView === 'folder_detail') {
+          renderFolderDetailView(selectedFolderName);
+        } else if (currentView === 'playlists') {
+          renderPlaylistsView();
+        } else if (currentView === 'expanded_player') {
+          renderExpandedPlayerView();
+        } else if (currentView === 'explore') {
+          renderExploreView();
+        } else if (currentView === 'recorder') {
+          renderRecorderView();
+        } else if (currentView === 'home') {
+          renderHomePage();
+        } else {
+          renderSongList();
+        }
+      }
+
+      // Explore / Library target click bindings
+      document.querySelectorAll('[data-explore-target="artists"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderArtistMainView();
+        });
+      });
+
+      document.querySelectorAll('[data-explore-target="albums"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderAlbumsMainView();
+        });
+      });
+
+      document.querySelectorAll('[data-explore-target="favourite"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderFavouritesView();
+        });
+      });
+
+      document.querySelectorAll('[data-explore-target="folders"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderFoldersMainView();
+        });
+      });
+
+      document.querySelectorAll('[data-explore-target="genre"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderGenreView();
+        });
+      });
+
+      document.querySelectorAll('[data-explore-target="recorder"]').forEach(item => {
+        item.addEventListener('click', () => {
+          renderRecorderView();
+        });
+      });
+
+      const exploreArtistItem = document.getElementById('exploreArtistItem');
+      if (exploreArtistItem) {
+        exploreArtistItem.addEventListener('click', () => {
+          renderArtistMainView();
+        });
+      }
+
+      const explorePlaylistItem = document.getElementById('explorePlaylistItem');
+      if (explorePlaylistItem) {
+        explorePlaylistItem.addEventListener('click', () => {
+          renderPlaylistsView();
+        });
+      }
+
+      const exploreFoldersItem = document.getElementById('exploreFoldersItem');
+      if (exploreFoldersItem) {
+        exploreFoldersItem.addEventListener('click', () => {
+          renderFoldersMainView();
+        });
+      }
+
+      const exploreRecorderItem = document.getElementById('exploreRecorderItem');
+      if (exploreRecorderItem) {
+        exploreRecorderItem.addEventListener('click', () => {
+          renderRecorderView();
+        });
+      }
+
+      const themeLightBtn = document.getElementById('themeLightBtn');
+      const themeDarkBtn = document.getElementById('themeDarkBtn');
+      if (themeLightBtn) {
+        themeLightBtn.addEventListener('click', () => {
+          applyTheme('light');
+          showToast('Switched to Light Mode');
+        });
+      }
+      if (themeDarkBtn) {
+        themeDarkBtn.addEventListener('click', () => {
+          applyTheme('dark');
+          showToast('Switched to Dark Mode');
+        });
+      }
+
+      // Close modals when clicking backdrop
+      window.addEventListener('click', (e) => {
+        if (e.target === searchOverlay) closeSearchOverlay();
+        if (e.target === settingsModal) settingsModal.classList.remove('open');
+        if (playlistModal && e.target === playlistModal) closePlaylistModal();
+        if (contextMenu) contextMenu.classList.remove('open');
+        if (playlistContextMenu) playlistContextMenu.classList.remove('open');
+        if (artistContextMenu) artistContextMenu.classList.remove('open');
+        if (albumContextMenu) albumContextMenu.classList.remove('open');
+        if (folderContextMenu) folderContextMenu.classList.remove('open');
+        if (recordingContextMenu) recordingContextMenu.classList.remove('open');
+
+        const homeDropdown = document.getElementById('homeViewDropdownMenu');
+        if (homeDropdown && !e.target.closest('#homeViewSelectorPill') && !e.target.closest('#homeViewDropdownMenu')) {
+          homeDropdown.classList.remove('open');
+        }
+      });
+
+      // Mobile Back Button / Gesture Navigation (Search Results -> Back -> All Songs)
+      window.addEventListener('popstate', () => {
+        if (isSearchHistoryActive || (searchOverlay && searchOverlay.classList.contains('open')) || searchQuery.trim().length > 0) {
+          isSearchHistoryActive = false;
+          setAllFilter();
+        }
+      });
+
+      // Context Menu for song options
+      let contextTrackId = null;
+      let contextIsInPlaylist = false;
+
+      function showContextMenu(e, trackId, isInPlaylist = false) {
+        contextTrackId = trackId;
+        contextIsInPlaylist = isInPlaylist || (currentView === 'playlist_songs');
+        if (!contextMenu) return;
+
+        const removeFromPlBtn = document.getElementById('contextRemoveFromPlaylistBtn');
+        if (removeFromPlBtn) {
+          removeFromPlBtn.style.display = contextIsInPlaylist ? 'block' : 'none';
+        }
+
+        const removeFolderBtn = document.getElementById('contextRemoveFromFolderBtn');
+        if (removeFolderBtn) {
+          const track = allTracks.find(t => t.id === trackId);
+          removeFolderBtn.style.display = (track && track.folderId) ? 'block' : 'none';
+        }
+
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        if (clientX === undefined || clientY === undefined) {
+          const target = e.currentTarget || e.target;
+          if (target && target.getBoundingClientRect) {
+            const r = target.getBoundingClientRect();
+            clientX = r.left + r.width / 2;
+            clientY = r.bottom;
+          } else {
+            clientX = window.innerWidth / 2;
+            clientY = window.innerHeight / 2;
+          }
+        }
+
+        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
+        const y = Math.min(window.innerHeight - 250, Math.max(10, clientY + 8));
+
+        contextMenu.style.left = `${x}px`;
+        contextMenu.style.top = `${y}px`;
+        contextMenu.classList.add('open');
+      }
+
+      // Playlist context menu for 3-dots on playlist cards
+      const playlistContextMenu = document.getElementById('playlistContextMenu');
+      function showPlaylistContextMenu(e, playlistId) {
+        playlistContextMenuTargetId = playlistId;
+        if (!playlistContextMenu) return;
+
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        if (clientX === undefined || clientY === undefined) {
+          const target = e.currentTarget || e.target;
+          if (target && target.getBoundingClientRect) {
+            const r = target.getBoundingClientRect();
+            clientX = r.left + r.width / 2;
+            clientY = r.bottom;
+          } else {
+            clientX = window.innerWidth / 2;
+            clientY = window.innerHeight / 2;
+          }
+        }
+
+        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
+        const y = Math.min(window.innerHeight - 200, Math.max(10, clientY + 8));
+
+        playlistContextMenu.style.left = `${x}px`;
+        playlistContextMenu.style.top = `${y}px`;
+        playlistContextMenu.classList.add('open');
+      }
+
+      // Now Playing cover image 3-dot options buttons (PC & Mobile)
+      const nowPlayingOptionsBtn = document.getElementById('nowPlayingOptionsBtn');
+      const mobileFullOptionsBtn = document.getElementById('mobileFullOptionsBtn');
+      [nowPlayingOptionsBtn, mobileFullOptionsBtn].forEach(btn => {
+        if (btn) {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (player.currentTrack) {
+              showContextMenu(e, player.currentTrack.id, currentView === 'playlist_songs');
+            } else {
+              showToast('No song is currently playing');
+            }
+          });
+        }
+      });
+
+      // Song Context Menu Actions
+      document.querySelectorAll('#songContextMenu .context-item').forEach(item => {
+        item.addEventListener('click', async () => {
+          const action = item.dataset.action;
+          if (!contextTrackId) return;
+
+          const track = allTracks.find(t => t.id === contextTrackId);
+          if (!track) return;
+
+          if (action === 'select') {
+            openSelectMode(contextTrackId);
+          } else if (action === 'add-to-playlist') {
+            openAddToPlaylistModal([contextTrackId]);
+          } else if (action === 'move-to-folder') {
+            openMoveToFolderModal(contextTrackId);
+          } else if (action === 'remove-from-folder') {
+            const track = allTracks.find(t => t.id === contextTrackId);
+            if (track && window.folderService) {
+              window.folderService.removeSongFromFolder(track.id, allTracks);
+              track.folderId = null;
+              syncToAtu(true);
+              showToast(`Removed "${track.title}" from folder (now Unsorted)`);
+              if (currentView === 'folders_main') {
+                renderFoldersGridView();
+              } else if (currentView === 'folder_detail') {
+                renderFolderDetailView(selectedFolderName);
+              } else if (currentView === 'all_songs') {
+                renderSongList();
+              }
+            }
+          } else if (action === 'remove-from-playlist') {
+            if (activePlaylistId) {
+              const playlist = playlists.find(p => p.id === activePlaylistId);
+              await fileManager.removeTrackFromPlaylist(activePlaylistId, contextTrackId);
+              playlists = await fileManager.getPlaylists();
+              renderPlaylistSongsView(activePlaylistId);
+              showToast(`Removed "${track.title}" from "${playlist ? playlist.name : 'playlist'}"`);
+            }
+          } else if (action === 'play-next') {
+            const currentIdx = player.currentIndex;
+            const targetIdx = allTracks.findIndex(t => t.id === contextTrackId);
+            if (targetIdx !== -1) {
+              const [moved] = allTracks.splice(targetIdx, 1);
+              allTracks.splice(currentIdx + 1, 0, moved);
+              player.setQueue(allTracks, player.currentIndex, false);
+              if (currentView === 'all_songs') renderSongList();
+              showToast(`"${track.title}" will play next`);
+            }
+          } else if (action === 'info') {
+            alert(`Title: ${track.title}\nArtist: ${track.artist || 'Unknown'}\nAlbum: ${track.album || 'Unknown'}\nDuration: ${track.formattedDuration || 'Unknown'}`);
+          } else if (action === 'delete') {
+            if (confirm(`Remove "${track.title}" from library?`)) {
+              fileManager.deleteTrackFromDB(track.id);
               if (track.id === localStorage.getItem('musico-last-played-id')) {
                 localStorage.removeItem('musico-last-played-id');
               }
-            }
-
-            // Clean up playlists referencing deleted tracks
-            for (const pl of playlists) {
-              if (pl.trackIds && pl.trackIds.some(id => deletedTrackIds.includes(id))) {
-                pl.trackIds = pl.trackIds.filter(id => !deletedTrackIds.includes(id));
-                await fileManager.savePlaylist(pl);
-              }
-            }
-            playlists = await fileManager.getPlaylists();
-
-            // Filter out of memory
-            allTracks = allTracks.filter(t => (t.artist || 'Unknown').trim().toLowerCase() !== targetArtistName.trim().toLowerCase());
-
-            // Handle current playing song if it was in the deleted artist
-            if (player.currentTrack && deletedTrackIds.includes(player.currentTrack.id)) {
+              allTracks = allTracks.filter(t => t.id !== track.id);
               if (allTracks.length === 0) {
                 player.setQueue([], 0, false);
+              }
+              if (currentView === 'all_songs') renderSongList();
+              showToast(`Removed "${track.title}"`);
+            }
+          }
+          contextMenu.classList.remove('open');
+        });
+      });
+
+      // Playlist Context Menu Actions
+      if (playlistContextMenu) {
+        playlistContextMenu.querySelectorAll('.context-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            const action = item.dataset.action;
+            if (!playlistContextMenuTargetId) return;
+
+            const playlist = playlists.find(p => p.id === playlistContextMenuTargetId);
+            if (!playlist) return;
+
+            if (action === 'play-playlist') {
+              const playlistTracks = (playlist.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+              if (playlistTracks.length === 0) {
+                showToast('Playlist is empty');
               } else {
-                player.setQueue(allTracks, 0, false);
+                player.activePlaylistId = playlist.id;
+                player.activePlaylistName = playlist.name;
+                await fileManager.incrementPlaylistPlayCount(playlist.id);
+                playlists = await fileManager.getPlaylists();
+                player.setQueue(playlistTracks, 0, true);
+                player.updateNowPlayingUI();
+                showToast(`Playing playlist "${playlist.name}"`);
+              }
+            } else if (action === 'rename-playlist') {
+              const newName = prompt('Enter new playlist name:', playlist.name);
+              if (newName && newName.trim() && newName.trim() !== playlist.name) {
+                playlist.name = newName.trim();
+                await fileManager.savePlaylist(playlist);
+                playlists = await fileManager.getPlaylists();
+                renderPlaylistsView();
+                showToast(`Renamed to "${playlist.name}"`);
+              }
+            } else if (action === 'delete-playlist') {
+              if (confirm(`Delete playlist "${playlist.name}"? (Songs will remain in your library)`)) {
+                await fileManager.deletePlaylist(playlist.id);
+                playlists = await fileManager.getPlaylists();
+                renderPlaylistsView();
+                showToast(`Deleted playlist "${playlist.name}"`);
               }
             }
-
-            // Immediately re-render view
-            if (currentView === 'artist_detail' && selectedArtistName && selectedArtistName.toLowerCase() === targetArtistName.toLowerCase()) {
-              renderArtistMainView();
-            } else if (currentView === 'artist_main' || currentView === 'artist_main_list' || currentView === 'artist_main_grid' || currentView === 'artists') {
-              renderArtistMainView();
-            } else if (currentView === 'all_songs') {
-              renderSongList();
-            } else if (currentView === 'playlists') {
-              renderPlaylistsView();
-            }
-
-            showToast(`Deleted artist "${targetArtistName}"`);
-          }
-        }
-        artistContextMenu.classList.remove('open');
-      });
-    });
-  }
-
-  // Album Context Menu Actions (Play Album, Delete Album)
-  if (albumContextMenu) {
-    albumContextMenu.querySelectorAll('.context-item').forEach(item => {
-      item.addEventListener('click', async () => {
-        const action = item.dataset.action;
-        if (!albumContextMenuTargetName) return;
-
-        const targetAlbumName = albumContextMenuTargetName;
-        const albumTracks = allTracks.filter(t => (t.album || t.title || '').trim().toLowerCase() === targetAlbumName.trim().toLowerCase());
-
-        if (action === 'play-album') {
-          if (albumTracks.length === 0) {
-            showToast(`No songs found for "${targetAlbumName}"`);
-          } else {
-            player.activePlaylistId = null;
-            player.activePlaylistName = null;
-            player.setQueue(albumTracks, 0, true);
-            player.updateNowPlayingUI();
-            showToast(`Playing album "${targetAlbumName}"`);
-          }
-        } else if (action === 'delete-album') {
-          if (confirm(`Delete album "${targetAlbumName}" and all associated songs from library?`)) {
-            const deletedTrackIds = albumTracks.map(t => t.id);
-
-            for (const track of albumTracks) {
-              await fileManager.deleteTrackFromDB(track.id);
-              if (track.id === localStorage.getItem('musico-last-played-id')) {
-                localStorage.removeItem('musico-last-played-id');
-              }
-            }
-
-            for (const pl of playlists) {
-              if (pl.trackIds && pl.trackIds.some(id => deletedTrackIds.includes(id))) {
-                pl.trackIds = pl.trackIds.filter(id => !deletedTrackIds.includes(id));
-                await fileManager.savePlaylist(pl);
-              }
-            }
-            playlists = await fileManager.getPlaylists();
-
-            allTracks = allTracks.filter(t => (t.album || t.title || '').trim().toLowerCase() !== targetAlbumName.trim().toLowerCase());
-
-            if (player.currentTrack && deletedTrackIds.includes(player.currentTrack.id)) {
-              if (allTracks.length === 0) {
-                player.setQueue([], 0, false);
-              } else {
-                player.setQueue(allTracks, 0, false);
-              }
-            }
-
-            if (currentView === 'album_detail' && selectedAlbumName && selectedAlbumName.toLowerCase() === targetAlbumName.toLowerCase()) {
-              renderAlbumsMainView();
-            } else if (currentView === 'albums_main') {
-              renderAlbumsMainView();
-            } else if (currentView === 'all_songs') {
-              renderSongList();
-            } else if (currentView === 'playlists') {
-              renderPlaylistsView();
-            }
-
-            showToast(`Deleted album "${targetAlbumName}"`);
-          }
-        }
-        albumContextMenu.classList.remove('open');
-      });
-    });
-  }
-
-  // =========================================================================
-  // MULTI-SELECTION MODE CONTROLS
-  // =========================================================================
-  function openSelectMode(initialTrackId) {
-    isSelectMode = true;
-    selectedTrackIds.clear();
-    if (initialTrackId) {
-      selectedTrackIds.add(initialTrackId);
-    }
-    updateMultiSelectUI();
-  }
-
-  function exitSelectMode() {
-    isSelectMode = false;
-    selectedTrackIds.clear();
-    updateMultiSelectUI();
-  }
-
-  function updateMultiSelectUI() {
-    const bar = document.getElementById('multiSelectActionBar');
-    const count = document.getElementById('multiSelectCount');
-    if (bar) bar.classList.toggle('visible', isSelectMode);
-    if (count) count.textContent = selectedTrackIds.size;
-
-    if (songsListContainer) {
-      songsListContainer.classList.toggle('select-mode', isSelectMode);
-      songsListContainer.querySelectorAll('.song-card').forEach(card => {
-        const id = card.dataset.id;
-        card.classList.toggle('selected', selectedTrackIds.has(id));
-      });
-    }
-  }
-
-  const multiSelectAllBtn = document.getElementById('multiSelectAllBtn');
-  if (multiSelectAllBtn) {
-    multiSelectAllBtn.addEventListener('click', () => {
-      let currentList = allTracks;
-      if (currentView === 'playlist_songs' && activePlaylistId) {
-        const pl = playlists.find(p => p.id === activePlaylistId);
-        if (pl) currentList = (pl.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+            playlistContextMenu.classList.remove('open');
+          });
+        });
       }
-      if (selectedTrackIds.size === currentList.length) {
+
+      // Artist context menu for 3-dots on artist cards
+      const artistContextMenu = document.getElementById('artistContextMenu');
+      function showArtistContextMenu(e, artistName) {
+        artistContextMenuTargetName = artistName;
+        if (!artistContextMenu) return;
+
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        if (clientX === undefined || clientY === undefined) {
+          const target = e.currentTarget || e.target;
+          if (target && target.getBoundingClientRect) {
+            const r = target.getBoundingClientRect();
+            clientX = r.left + r.width / 2;
+            clientY = r.bottom;
+          } else {
+            clientX = window.innerWidth / 2;
+            clientY = window.innerHeight / 2;
+          }
+        }
+
+        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
+        const y = Math.min(window.innerHeight - 150, Math.max(10, clientY + 8));
+
+        artistContextMenu.style.left = `${x}px`;
+        artistContextMenu.style.top = `${y}px`;
+        artistContextMenu.classList.add('open');
+      }
+
+      // Artist Context Menu Actions (Play this Artist, Delete Artist)
+      if (artistContextMenu) {
+        artistContextMenu.querySelectorAll('.context-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            const action = item.dataset.action;
+            if (!artistContextMenuTargetName) return;
+
+            const targetArtistName = artistContextMenuTargetName;
+            const artistTracks = allTracks.filter(t => (t.artist || 'Unknown').trim().toLowerCase() === targetArtistName.trim().toLowerCase());
+
+            if (action === 'play-artist') {
+              if (artistTracks.length === 0) {
+                showToast(`No songs found for "${targetArtistName}"`);
+              } else {
+                player.activePlaylistId = null;
+                player.activePlaylistName = null;
+                player.setQueue(artistTracks, 0, true);
+                player.updateNowPlayingUI();
+                showToast(`Playing ${targetArtistName}`);
+              }
+            } else if (action === 'delete-artist') {
+              if (confirm(`Delete artist "${targetArtistName}" and all associated songs from library?`)) {
+                const deletedTrackIds = artistTracks.map(t => t.id);
+
+                // Delete each track belonging to this artist from IndexedDB
+                for (const track of artistTracks) {
+                  await fileManager.deleteTrackFromDB(track.id);
+                  if (track.id === localStorage.getItem('musico-last-played-id')) {
+                    localStorage.removeItem('musico-last-played-id');
+                  }
+                }
+
+                // Clean up playlists referencing deleted tracks
+                for (const pl of playlists) {
+                  if (pl.trackIds && pl.trackIds.some(id => deletedTrackIds.includes(id))) {
+                    pl.trackIds = pl.trackIds.filter(id => !deletedTrackIds.includes(id));
+                    await fileManager.savePlaylist(pl);
+                  }
+                }
+                playlists = await fileManager.getPlaylists();
+
+                // Filter out of memory
+                allTracks = allTracks.filter(t => (t.artist || 'Unknown').trim().toLowerCase() !== targetArtistName.trim().toLowerCase());
+
+                // Handle current playing song if it was in the deleted artist
+                if (player.currentTrack && deletedTrackIds.includes(player.currentTrack.id)) {
+                  if (allTracks.length === 0) {
+                    player.setQueue([], 0, false);
+                  } else {
+                    player.setQueue(allTracks, 0, false);
+                  }
+                }
+
+                // Immediately re-render view
+                if (currentView === 'artist_detail' && selectedArtistName && selectedArtistName.toLowerCase() === targetArtistName.toLowerCase()) {
+                  renderArtistMainView();
+                } else if (currentView === 'artist_main' || currentView === 'artist_main_list' || currentView === 'artist_main_grid' || currentView === 'artists') {
+                  renderArtistMainView();
+                } else if (currentView === 'all_songs') {
+                  renderSongList();
+                } else if (currentView === 'playlists') {
+                  renderPlaylistsView();
+                }
+
+                showToast(`Deleted artist "${targetArtistName}"`);
+              }
+            }
+            artistContextMenu.classList.remove('open');
+          });
+        });
+      }
+
+      // Album Context Menu Actions (Play Album, Delete Album)
+      if (albumContextMenu) {
+        albumContextMenu.querySelectorAll('.context-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            const action = item.dataset.action;
+            if (!albumContextMenuTargetName) return;
+
+            const targetAlbumName = albumContextMenuTargetName;
+            const albumTracks = allTracks.filter(t => (t.album || t.title || '').trim().toLowerCase() === targetAlbumName.trim().toLowerCase());
+
+            if (action === 'play-album') {
+              if (albumTracks.length === 0) {
+                showToast(`No songs found for "${targetAlbumName}"`);
+              } else {
+                player.activePlaylistId = null;
+                player.activePlaylistName = null;
+                player.setQueue(albumTracks, 0, true);
+                player.updateNowPlayingUI();
+                showToast(`Playing album "${targetAlbumName}"`);
+              }
+            } else if (action === 'delete-album') {
+              if (confirm(`Delete album "${targetAlbumName}" and all associated songs from library?`)) {
+                const deletedTrackIds = albumTracks.map(t => t.id);
+
+                for (const track of albumTracks) {
+                  await fileManager.deleteTrackFromDB(track.id);
+                  if (track.id === localStorage.getItem('musico-last-played-id')) {
+                    localStorage.removeItem('musico-last-played-id');
+                  }
+                }
+
+                for (const pl of playlists) {
+                  if (pl.trackIds && pl.trackIds.some(id => deletedTrackIds.includes(id))) {
+                    pl.trackIds = pl.trackIds.filter(id => !deletedTrackIds.includes(id));
+                    await fileManager.savePlaylist(pl);
+                  }
+                }
+                playlists = await fileManager.getPlaylists();
+
+                allTracks = allTracks.filter(t => (t.album || t.title || '').trim().toLowerCase() !== targetAlbumName.trim().toLowerCase());
+
+                if (player.currentTrack && deletedTrackIds.includes(player.currentTrack.id)) {
+                  if (allTracks.length === 0) {
+                    player.setQueue([], 0, false);
+                  } else {
+                    player.setQueue(allTracks, 0, false);
+                  }
+                }
+
+                if (currentView === 'album_detail' && selectedAlbumName && selectedAlbumName.toLowerCase() === targetAlbumName.toLowerCase()) {
+                  renderAlbumsMainView();
+                } else if (currentView === 'albums_main') {
+                  renderAlbumsMainView();
+                } else if (currentView === 'all_songs') {
+                  renderSongList();
+                } else if (currentView === 'playlists') {
+                  renderPlaylistsView();
+                }
+
+                showToast(`Deleted album "${targetAlbumName}"`);
+              }
+            }
+            albumContextMenu.classList.remove('open');
+          });
+        });
+      }
+
+      // =========================================================================
+      // MULTI-SELECTION MODE CONTROLS
+      // =========================================================================
+      function openSelectMode(initialTrackId) {
+        isSelectMode = true;
         selectedTrackIds.clear();
-      } else {
-        currentList.forEach(t => selectedTrackIds.add(t.id));
+        if (initialTrackId) {
+          selectedTrackIds.add(initialTrackId);
+        }
+        updateMultiSelectUI();
       }
-      updateMultiSelectUI();
-    });
-  }
 
-  const multiSelectCancelBtn = document.getElementById('multiSelectCancelBtn');
-  if (multiSelectCancelBtn) {
-    multiSelectCancelBtn.addEventListener('click', () => {
-      exitSelectMode();
-    });
-  }
-
-  const multiSelectAddBtn = document.getElementById('multiSelectAddBtn');
-  if (multiSelectAddBtn) {
-    multiSelectAddBtn.addEventListener('click', () => {
-      if (selectedTrackIds.size === 0) {
-        showToast('Please select at least one song');
-        return;
+      function exitSelectMode() {
+        isSelectMode = false;
+        selectedTrackIds.clear();
+        updateMultiSelectUI();
       }
-      openAddToPlaylistModal(Array.from(selectedTrackIds));
-    });
-  }
 
-  // =========================================================================
-  // ADD TO PLAYLIST MODAL & QUICK CREATE CONTROLS
-  // =========================================================================
-  const playlistModal = document.getElementById('playlistModal');
-  const closePlaylistModalBtn = document.getElementById('closePlaylistModalBtn');
-  const showCreatePlaylistBtn = document.getElementById('showCreatePlaylistBtn');
-  const createPlaylistInputBox = document.getElementById('createPlaylistInputBox');
-  const newPlaylistNameInput = document.getElementById('newPlaylistNameInput');
-  const confirmCreatePlaylistBtn = document.getElementById('confirmCreatePlaylistBtn');
-  const cancelCreatePlaylistBtn = document.getElementById('cancelCreatePlaylistBtn');
-  const playlistSelectList = document.getElementById('playlistSelectList');
+      function updateMultiSelectUI() {
+        const bar = document.getElementById('multiSelectActionBar');
+        const count = document.getElementById('multiSelectCount');
+        if (bar) bar.classList.toggle('visible', isSelectMode);
+        if (count) count.textContent = selectedTrackIds.size;
 
-  function openAddToPlaylistModal(trackIds = []) {
-    modalPendingTrackIds = Array.isArray(trackIds) ? trackIds : [trackIds];
-    if (!playlistModal) return;
+        if (songsListContainer) {
+          songsListContainer.classList.toggle('select-mode', isSelectMode);
+          songsListContainer.querySelectorAll('.song-card').forEach(card => {
+            const id = card.dataset.id;
+            card.classList.toggle('selected', selectedTrackIds.has(id));
+          });
+        }
+      }
 
-    if (createPlaylistInputBox) createPlaylistInputBox.style.display = 'none';
-    if (showCreatePlaylistBtn) showCreatePlaylistBtn.style.display = 'block';
-    if (newPlaylistNameInput) newPlaylistNameInput.value = '';
+      const multiSelectAllBtn = document.getElementById('multiSelectAllBtn');
+      if (multiSelectAllBtn) {
+        multiSelectAllBtn.addEventListener('click', () => {
+          let currentList = allTracks;
+          if (currentView === 'playlist_songs' && activePlaylistId) {
+            const pl = playlists.find(p => p.id === activePlaylistId);
+            if (pl) currentList = (pl.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+          }
+          if (selectedTrackIds.size === currentList.length) {
+            selectedTrackIds.clear();
+          } else {
+            currentList.forEach(t => selectedTrackIds.add(t.id));
+          }
+          updateMultiSelectUI();
+        });
+      }
 
-    renderPlaylistSelectList();
-    playlistModal.classList.add('open');
-  }
+      const multiSelectCancelBtn = document.getElementById('multiSelectCancelBtn');
+      if (multiSelectCancelBtn) {
+        multiSelectCancelBtn.addEventListener('click', () => {
+          exitSelectMode();
+        });
+      }
 
-  function closePlaylistModal() {
-    if (playlistModal) playlistModal.classList.remove('open');
-    modalPendingTrackIds = [];
-  }
+      const multiSelectAddBtn = document.getElementById('multiSelectAddBtn');
+      if (multiSelectAddBtn) {
+        multiSelectAddBtn.addEventListener('click', () => {
+          if (selectedTrackIds.size === 0) {
+            showToast('Please select at least one song');
+            return;
+          }
+          openAddToPlaylistModal(Array.from(selectedTrackIds));
+        });
+      }
 
-  function renderPlaylistSelectList() {
-    if (!playlistSelectList) return;
-    if (playlists.length === 0) {
-      playlistSelectList.innerHTML = `<div class="playlist-select-empty">No playlists created yet.<br>Click the button above to create one!</div>`;
-      return;
-    }
+      // =========================================================================
+      // ADD TO PLAYLIST MODAL & QUICK CREATE CONTROLS
+      // =========================================================================
+      const playlistModal = document.getElementById('playlistModal');
+      const closePlaylistModalBtn = document.getElementById('closePlaylistModalBtn');
+      const showCreatePlaylistBtn = document.getElementById('showCreatePlaylistBtn');
+      const createPlaylistInputBox = document.getElementById('createPlaylistInputBox');
+      const newPlaylistNameInput = document.getElementById('newPlaylistNameInput');
+      const confirmCreatePlaylistBtn = document.getElementById('confirmCreatePlaylistBtn');
+      const cancelCreatePlaylistBtn = document.getElementById('cancelCreatePlaylistBtn');
+      const playlistSelectList = document.getElementById('playlistSelectList');
 
-    playlistSelectList.innerHTML = playlists.map(p => {
-      const count = p.trackIds ? p.trackIds.length : 0;
-      return `
+      function openAddToPlaylistModal(trackIds = []) {
+        modalPendingTrackIds = Array.isArray(trackIds) ? trackIds : [trackIds];
+        if (!playlistModal) return;
+
+        if (createPlaylistInputBox) createPlaylistInputBox.style.display = 'none';
+        if (showCreatePlaylistBtn) showCreatePlaylistBtn.style.display = 'block';
+        if (newPlaylistNameInput) newPlaylistNameInput.value = '';
+
+        renderPlaylistSelectList();
+        playlistModal.classList.add('open');
+      }
+
+      function closePlaylistModal() {
+        if (playlistModal) playlistModal.classList.remove('open');
+        modalPendingTrackIds = [];
+      }
+
+      function renderPlaylistSelectList() {
+        if (!playlistSelectList) return;
+        if (playlists.length === 0) {
+          playlistSelectList.innerHTML = `<div class="playlist-select-empty">No playlists created yet.<br>Click the button above to create one!</div>`;
+          return;
+        }
+
+        playlistSelectList.innerHTML = playlists.map(p => {
+          const count = p.trackIds ? p.trackIds.length : 0;
+          return `
         <div class="playlist-select-item" data-playlist-id="${p.id}">
           <span class="playlist-select-name">${escapeHtml(p.name)}</span>
           <span class="playlist-select-count">${count} song${count === 1 ? '' : 's'}</span>
         </div>
       `;
-    }).join('');
+        }).join('');
 
-    playlistSelectList.querySelectorAll('.playlist-select-item').forEach(item => {
-      item.addEventListener('click', async () => {
-        const id = item.dataset.playlistId;
-        const targetPl = playlists.find(p => p.id === id);
-        if (targetPl && modalPendingTrackIds.length > 0) {
-          await fileManager.addTracksToPlaylist(id, modalPendingTrackIds);
-          playlists = await fileManager.getPlaylists();
-          closePlaylistModal();
-          exitSelectMode();
-          showToast(`Added ${modalPendingTrackIds.length} song${modalPendingTrackIds.length > 1 ? 's' : ''} to "${targetPl.name}"`);
-          if (currentView === 'playlists') {
-            renderPlaylistsView();
-          } else if (currentView === 'playlist_songs' && activePlaylistId === id) {
-            renderPlaylistSongsView(id);
+        playlistSelectList.querySelectorAll('.playlist-select-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            const id = item.dataset.playlistId;
+            const targetPl = playlists.find(p => p.id === id);
+            if (targetPl && modalPendingTrackIds.length > 0) {
+              await fileManager.addTracksToPlaylist(id, modalPendingTrackIds);
+              playlists = await fileManager.getPlaylists();
+              closePlaylistModal();
+              exitSelectMode();
+              showToast(`Added ${modalPendingTrackIds.length} song${modalPendingTrackIds.length > 1 ? 's' : ''} to "${targetPl.name}"`);
+              if (currentView === 'playlists') {
+                renderPlaylistsView();
+              } else if (currentView === 'playlist_songs' && activePlaylistId === id) {
+                renderPlaylistSongsView(id);
+              }
+            }
+          });
+        });
+      }
+
+      function openCreatePlaylistModal() {
+        openAddToPlaylistModal([]);
+        if (showCreatePlaylistBtn) showCreatePlaylistBtn.style.display = 'none';
+        if (createPlaylistInputBox) {
+          createPlaylistInputBox.style.display = 'flex';
+          if (newPlaylistNameInput) {
+            newPlaylistNameInput.focus();
+          }
+        }
+      }
+
+      if (closePlaylistModalBtn) {
+        closePlaylistModalBtn.addEventListener('click', closePlaylistModal);
+      }
+
+      if (showCreatePlaylistBtn && createPlaylistInputBox) {
+        showCreatePlaylistBtn.addEventListener('click', () => {
+          showCreatePlaylistBtn.style.display = 'none';
+          createPlaylistInputBox.style.display = 'flex';
+          if (newPlaylistNameInput) {
+            newPlaylistNameInput.value = '';
+            newPlaylistNameInput.focus();
+          }
+        });
+      }
+
+      if (cancelCreatePlaylistBtn && showCreatePlaylistBtn && createPlaylistInputBox) {
+        cancelCreatePlaylistBtn.addEventListener('click', () => {
+          createPlaylistInputBox.style.display = 'none';
+          showCreatePlaylistBtn.style.display = 'block';
+        });
+      }
+
+      async function handleConfirmCreatePlaylist() {
+        if (!newPlaylistNameInput) return;
+        const name = newPlaylistNameInput.value.trim();
+        if (!name) {
+          showToast('Please enter a playlist name');
+          return;
+        }
+
+        const newPlaylist = {
+          id: 'pl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          name: name,
+          trackIds: [...modalPendingTrackIds],
+          songIds: [...modalPendingTrackIds],
+          isUserCreated: true,
+          justCreated: true,
+          playCount: 0,
+          createdAt: Date.now()
+        };
+
+        await fileManager.savePlaylist(newPlaylist);
+        playlists = await fileManager.getPlaylists();
+        closePlaylistModal();
+        exitSelectMode();
+
+        if (modalPendingTrackIds.length > 0) {
+          showToast(`Created playlist "${name}" with ${modalPendingTrackIds.length} song${modalPendingTrackIds.length > 1 ? 's' : ''}`);
+        } else {
+          showToast(`Created playlist "${name}"`);
+        }
+
+        if (currentView === 'playlists') {
+          renderPlaylistsView();
+        }
+      }
+
+      if (confirmCreatePlaylistBtn) {
+        confirmCreatePlaylistBtn.addEventListener('click', handleConfirmCreatePlaylist);
+      }
+
+      if (newPlaylistNameInput) {
+        newPlaylistNameInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            handleConfirmCreatePlaylist();
+          }
+        });
+      }
+
+      // Settings Preset controls
+      const eqPresets = document.querySelectorAll('.eq-preset-btn');
+      eqPresets.forEach(btn => {
+        btn.addEventListener('click', () => {
+          eqPresets.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          showToast(`Equalizer Preset: ${btn.textContent.trim()}`);
+        });
+      });
+
+      // Clear Library Modal Handlers
+      const clearLibraryModal = document.getElementById('clearLibraryModal');
+      const clearLibraryCloseBtn = document.getElementById('clearLibraryCloseBtn');
+      const clearLibraryCancelBtn = document.getElementById('clearLibraryCancelBtn');
+      const clearLibraryConfirmBtn = document.getElementById('clearLibraryConfirmBtn');
+
+      function openClearLibraryModal() {
+        const modal = document.getElementById('clearLibraryModal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        modal.classList.add('open');
+        const confirmBtn = document.getElementById('clearLibraryConfirmBtn');
+        if (confirmBtn) {
+          setTimeout(() => confirmBtn.focus(), 60);
+        }
+      }
+      window.openClearLibraryModal = openClearLibraryModal;
+
+      function closeClearLibraryModal() {
+        const modal = document.getElementById('clearLibraryModal');
+        if (!modal) return;
+        modal.classList.remove('open');
+        modal.style.display = 'none';
+      }
+      window.closeClearLibraryModal = closeClearLibraryModal;
+
+      if (clearLibraryCloseBtn) clearLibraryCloseBtn.addEventListener('click', closeClearLibraryModal);
+      if (clearLibraryCancelBtn) clearLibraryCancelBtn.addEventListener('click', closeClearLibraryModal);
+
+      if (clearLibraryModal) {
+        clearLibraryModal.addEventListener('click', (e) => {
+          if (e.target === clearLibraryModal) closeClearLibraryModal();
+        });
+      }
+
+      // Keyboard Enter triggers confirmation when clearLibraryModal is open; Escape cancels
+      document.addEventListener('keydown', (e) => {
+        if (clearLibraryModal && (clearLibraryModal.classList.contains('open') || clearLibraryModal.style.display === 'flex')) {
+          if (e.key === 'Enter') {
+            if (e.target === clearLibraryConfirmBtn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (clearLibraryConfirmBtn) clearLibraryConfirmBtn.click();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            closeClearLibraryModal();
           }
         }
       });
-    });
-  }
 
-  function openCreatePlaylistModal() {
-    openAddToPlaylistModal([]);
-    if (showCreatePlaylistBtn) showCreatePlaylistBtn.style.display = 'none';
-    if (createPlaylistInputBox) {
-      createPlaylistInputBox.style.display = 'flex';
-      if (newPlaylistNameInput) {
-        newPlaylistNameInput.focus();
+      const clearLibraryBtn = document.getElementById('clearLibrarySettingsBtn');
+      if (clearLibraryBtn) {
+        clearLibraryBtn.addEventListener('click', (e) => {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          openClearLibraryModal();
+        });
       }
-    }
-  }
 
-  if (closePlaylistModalBtn) {
-    closePlaylistModalBtn.addEventListener('click', closePlaylistModal);
-  }
+      if (clearLibraryConfirmBtn) {
+        clearLibraryConfirmBtn.addEventListener('click', async (e) => {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          closeClearLibraryModal();
+          if (settingsModal) {
+            settingsModal.classList.remove('open');
+            settingsModal.style.display = '';
+          }
 
-  if (showCreatePlaylistBtn && createPlaylistInputBox) {
-    showCreatePlaylistBtn.addEventListener('click', () => {
-      showCreatePlaylistBtn.style.display = 'none';
-      createPlaylistInputBox.style.display = 'flex';
-      if (newPlaylistNameInput) {
-        newPlaylistNameInput.value = '';
-        newPlaylistNameInput.focus();
+          try {
+            // 1. Stop audio playback and reset queue & player UI
+            if (typeof player.stop === 'function') {
+              player.stop();
+            } else if (typeof player.pause === 'function') {
+              player.pause();
+            }
+            if (typeof player.setQueue === 'function') {
+              player.setQueue([], 0, false);
+            }
+            player.currentTrack = null;
+            if (typeof player.updateNowPlayingUI === 'function') {
+              player.updateNowPlayingUI();
+            }
+            if (typeof player.updatePlayPauseUI === 'function') {
+              player.updatePlayPauseUI();
+            }
+            if (typeof player.updateProgressUI === 'function') {
+              player.updateProgressUI();
+            }
+            try {
+              localStorage.removeItem('musico-last-played-id');
+            } catch (e) { }
+
+            // 2. Clear all local IndexedDB and localStorage data (tracks, playlists, favorites, genre cache)
+            if (fileManager.clearAllData) {
+              await fileManager.clearAllData();
+            } else {
+              await fileManager.clearAllTracks();
+              try {
+                localStorage.removeItem('musico_playlists');
+                localStorage.removeItem('musico_favourites');
+                localStorage.removeItem('musico_genre_cache');
+              } catch (e) { }
+            }
+
+            // 3. Reset in-memory state
+            allTracks = [];
+            playlists = [];
+            await fileManager.clearPlaylists();
+            if (window.folderService) {
+              window.folderService.init([]);
+            }
+
+            // Reset Profile and Stats in localStorage and UI
+            try {
+              localStorage.setItem('musico_profile_username', 'USER');
+              localStorage.setItem('musico_profile_name', 'USER');
+              localStorage.setItem('musico_profile_image', 'assets/default-avatar.svg');
+              localStorage.setItem('musico_profile_avatar', 'assets/default-avatar.svg');
+              if (fileManager) {
+                fileManager._cachedStats = {
+                  totalListeningSeconds: 0,
+                  totalSongsPlayed: 0,
+                  timeDistribution: { morning: 0, afternoon: 0, evening: 0, night: 0 },
+                  trackPlayCounts: {},
+                  genreCounts: {}
+                };
+                await fileManager.saveSetting('musico_playback_stats', fileManager._cachedStats);
+              }
+              if (typeof window.refreshAppProfileAndStatsUI === 'function') {
+                window.refreshAppProfileAndStatsUI('USER', 'assets/default-avatar.svg');
+              }
+            } catch (e) { }
+
+            // 4. Reset atsuko.atu data file on disk and in dataFolderService cache
+            if (window.dataFolderService) {
+              window.dataFolderService.originalAtuPlaylists = [];
+              window.dataFolderService.originalAtuSongs = [];
+              window.dataFolderService.currentInAppProfileSnapshot = {
+                username: 'USER',
+                avatar: 'assets/default-avatar.svg'
+              };
+              window.dataFolderService.currentInAppStatsSnapshot = {
+                totalListeningSeconds: 0,
+                totalSongsPlayed: 0
+              };
+              window.dataFolderService.originalAtuProfile = null;
+              window.dataFolderService.originalAtuStats = null;
+              window.dataFolderService.isReconciled = false;
+              window.dataFolderService.pendingReconciliation = false;
+              if (window.dataFolderService.resetData) {
+                await window.dataFolderService.resetData();
+              } else {
+                const freshData = window.AtuSchema ? window.AtuSchema.createDefaultData() : null;
+                if (freshData) {
+                  window.dataFolderService.previousSongCount = 0;
+                  window.dataFolderService._allowEmptyOverride = true;
+                  await window.dataFolderService.save(freshData, true);
+                  window.dataFolderService._allowEmptyOverride = false;
+                }
+              }
+            }
+
+            // 5. Automatically rescan disk Recordings folder so all .mp3 files remain visible and playable in Atsuko
+            await syncDiskRecordingsToLibrary();
+
+            // 6. Refresh ALL views
+            renderSongList();
+            if (currentView === 'recorder') {
+              renderRecorderView();
+            } else if (currentView === 'folders_main' || currentView === 'folder_detail' || currentView === 'folders') {
+              renderFoldersMainView();
+            } else if (currentView === 'playlists' || currentView === 'playlist_songs') {
+              renderPlaylistsView();
+            } else if (currentView === 'home') {
+              renderHomePage();
+            } else if (currentView === 'explore') {
+              renderExploreView();
+            }
+
+            showToast('Atsuko cleared. Brand new start; recordings preserved.');
+          } catch (err) {
+            console.error('[ClearLibrary] Error during clear:', err);
+            showToast('Error clearing library: ' + (err.message || err));
+          }
+        });
       }
-    });
-  }
-
-  if (cancelCreatePlaylistBtn && showCreatePlaylistBtn && createPlaylistInputBox) {
-    cancelCreatePlaylistBtn.addEventListener('click', () => {
-      createPlaylistInputBox.style.display = 'none';
-      showCreatePlaylistBtn.style.display = 'block';
-    });
-  }
-
-  async function handleConfirmCreatePlaylist() {
-    if (!newPlaylistNameInput) return;
-    const name = newPlaylistNameInput.value.trim();
-    if (!name) {
-      showToast('Please enter a playlist name');
-      return;
-    }
-
-    const newPlaylist = {
-      id: 'pl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      name: name,
-      trackIds: [...modalPendingTrackIds],
-      playCount: 0,
-      createdAt: Date.now()
-    };
-
-    await fileManager.savePlaylist(newPlaylist);
-    playlists = await fileManager.getPlaylists();
-    closePlaylistModal();
-    exitSelectMode();
-
-    if (modalPendingTrackIds.length > 0) {
-      showToast(`Created playlist "${name}" with ${modalPendingTrackIds.length} song${modalPendingTrackIds.length > 1 ? 's' : ''}`);
-    } else {
-      showToast(`Created playlist "${name}"`);
-    }
-
-    if (currentView === 'playlists') {
-      renderPlaylistsView();
-    }
-  }
-
-  if (confirmCreatePlaylistBtn) {
-    confirmCreatePlaylistBtn.addEventListener('click', handleConfirmCreatePlaylist);
-  }
-
-  if (newPlaylistNameInput) {
-    newPlaylistNameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        handleConfirmCreatePlaylist();
-      }
-    });
-  }
-
-  // Settings Preset controls
-  const eqPresets = document.querySelectorAll('.eq-preset-btn');
-  eqPresets.forEach(btn => {
-    btn.addEventListener('click', () => {
-      eqPresets.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showToast(`Equalizer Preset: ${btn.textContent.trim()}`);
-    });
-  });
-
-  const clearLibraryBtn = document.getElementById('clearLibrarySettingsBtn');
-  if (clearLibraryBtn) {
-    clearLibraryBtn.addEventListener('click', async () => {
-      if (confirm('Clear all imported songs?')) {
-        await fileManager.clearAllTracks();
-        localStorage.removeItem('musico-last-played-id');
-        allTracks = [];
-        player.setQueue([], 0, false);
-        renderSongList();
-        settingsModal.classList.remove('open');
-        showToast('Library cleared. No Songs.');
-      }
-    });
-  }
 
   // Volume slider in settings
   const settingsVolumeSlider = document.getElementById('settingsVolumeSlider');
-  if (settingsVolumeSlider) {
-    settingsVolumeSlider.value = player.volume * 100;
-    settingsVolumeSlider.addEventListener('input', (e) => {
-      player.setVolume(e.target.value / 100);
-    });
-  }
-
-  // Drag and drop audio files onto window (Combined library)
-  window.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    document.body.classList.add('drag-over');
-  });
-
-  window.addEventListener('dragleave', (e) => {
-    if (e.clientX === 0 || e.clientY === 0) {
-      document.body.classList.remove('drag-over');
-    }
-  });
-
-  window.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    document.body.classList.remove('drag-over');
-
-    const rawFiles = Array.from(e.dataTransfer.files || []);
-    const files = rawFiles.filter(f => FileManager.isAudioFile(f));
-
-    if (files.length > 0) {
-      showToast(`Importing ${files.length} audio file${files.length > 1 ? 's' : ''}...`);
-      const imported = await fileManager.processAudioFiles(files);
-      if (imported.length > 0) {
-        const existingIds = new Set(allTracks.map(t => t.id));
-        const existingKeys = new Set(allTracks.map(t => `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`));
-        const uniqueImported = imported.filter(t => {
-          const key = `${t.fileBlob?.name || t.title}_${t.fileBlob?.size || 0}`;
-          return !existingIds.has(t.id) && !existingKeys.has(key);
-        });
-        allTracks = [...allTracks, ...uniqueImported];
-        FileManager.sortTracks(allTracks);
-        if (currentView === 'all_songs') {
-          renderSongList();
-        }
-        showToast(`Added ${uniqueImported.length} song${uniqueImported.length > 1 ? 's' : ''}!`);
-        if (!player.currentTrack && allTracks.length > 0) {
-          player.setQueue(allTracks, 0, false);
-        }
-      }
-    }
-  });
-
-  // Global Keyboard Shortcuts
-  window.addEventListener('keydown', (e) => {
-    const active = document.activeElement;
-    if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
-
-    // Keyboard Shortcut — L (Open / Exit Full View)
-    if (e.code === 'KeyL' || e.key === 'l' || e.key === 'L') {
-      const active = document.activeElement;
-      if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      e.preventDefault();
-      if (isSongFullViewOpen) {
-        closeSongFullView();
-      } else {
-        if (!player || !player.currentTrack || !isSongTrackPlayable(player.currentTrack)) {
-          return;
-        }
-        openSongFullView();
-      }
-      return;
-    }
-
-    if (e.code === 'Space') {
-      e.preventDefault();
-      if (typeof isSongFullViewOpen !== 'undefined' && isSongFullViewOpen) {
-        handleFullViewSpaceOrScreenClick();
-        return;
-      }
-      if (allTracks.length === 0) {
-        handleAddMusic();
-      } else {
-        player.togglePlay();
-      }
-    } else if (e.code === 'ArrowRight') {
-      e.preventDefault();
-      player.seek(Math.min(100, ((player.audio.currentTime + 5) / (player.audio.duration || 1)) * 100));
-    } else if (e.code === 'ArrowLeft') {
-      e.preventDefault();
-      player.seek(Math.max(0, ((player.audio.currentTime - 5) / (player.audio.duration || 1)) * 100));
-    } else if (e.code === 'KeyN') {
-      player.next();
-    } else if (e.code === 'KeyP') {
-      player.prev();
-    } else if (e.code === 'KeyS') {
-      filterShuffleBtn && filterShuffleBtn.click();
-    } else if (currentView === 'recorder') {
-      if (e.code === 'KeyA') {
-        currentRecorderPcMode = 1;
-        updateRecorderEqualizerBars();
-        renderRecorderListView();
-      } else if (e.code === 'KeyD') {
-        currentRecorderPcMode = 2;
-        updateRecorderEqualizerBars();
-        renderRecorderGridView();
-      } else if (e.code === 'KeyR') {
-        if (isRecordingAudio) {
-          stopAudioRecording();
-        } else {
-          startAudioRecording();
-        }
-      }
-    }
-  });
-
-  // Helper to escape HTML strings
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  // Start app
-  applyTheme(currentTheme);
-  await initLibrary();
-  player.updatePlaybackModeUI();
-
-  // =========================================================================
-  // SINGLE-INSTANCE WINDOW COORDINATOR (PC / Windows PWA)
-  // Prevents opening duplicate windows when user launches Musico again.
-  // =========================================================================
-  if ('launchQueue' in window && 'setConsumer' in window.launchQueue) {
-    window.launchQueue.setConsumer(() => {
-      window.focus();
-    });
-  }
-
-  // =========================================================================
-  // =========================================================================
-  // PROFILE & MUSICO STATS CONTROLLER (PC VIEW ONLY) - HIGH PERFORMANCE
-  // =========================================================================
-  const profileBadge = document.getElementById('profileBadge');
-  const profileModal = document.getElementById('profileModal');
-  const closeProfileBtn = document.getElementById('closeProfileBtn');
-  const profileTabBtn = document.getElementById('profileTabBtn');
-  const statsTabBtn = document.getElementById('statsTabBtn');
-  const profileTabContent = document.getElementById('profileTabContent');
-  const statsTabContent = document.getElementById('statsTabContent');
-
-  const profileImageFileInput = document.getElementById('profileImageFileInput');
-  const changeProfileImageBtn = document.getElementById('changeProfileImageBtn');
-  const profileAvatarEditBadge = document.getElementById('profileAvatarEditBadge');
-  const profileAvatarWrap = document.getElementById('profileAvatarWrap');
-  const profileModalAvatarImg = document.getElementById('profileModalAvatarImg');
-
-  const sendFeedbackBtn = document.getElementById('sendFeedbackBtn');
-  const feedbackModal = document.getElementById('feedbackModal');
-  const closeFeedbackBtn = document.getElementById('closeFeedbackBtn');
-  const cancelFeedbackBtn = document.getElementById('cancelFeedbackBtn');
-  const submitFeedbackBtn = document.getElementById('submitFeedbackBtn');
-  const feedbackTextarea = document.getElementById('feedbackTextarea');
-
-  const userManualBtn = document.getElementById('userManualBtn');
-  const userManualModal = document.getElementById('userManualModal');
-  const closeUserManualBtn = document.getElementById('closeUserManualBtn');
-
-  // Performance cache flags
-  let _isProfileTabRendered = false;
-  let _isStatsTabRendered = false;
-  let _statsDataDirty = true;
-  let _profileDataDirty = true;
-  let _profileModalOpen = false;
-  let _realtimeUpdateTimeout = null;
-
-  // Load and apply initial profile data
-  async function initUserProfile() {
-    const fm = window.fileManager || window.appFileManager || fileManager;
-    let profile = null;
-    if (fm && typeof fm.getProfileData === 'function') {
-      try {
-        profile = await fm.getProfileData();
-      } catch (_) {}
-    }
-
-    const currentAvatar = (profile && profile.avatarUrl) || localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg';
-    const currentName = (profile && (profile.username || profile.name)) || localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER';
-
-    // 1. Update avatars across all badges, greeting, and modal
-    const navAvatar = document.querySelector('#profileBadge .profile-avatar-img');
-    if (navAvatar && navAvatar.src !== currentAvatar) {
-      navAvatar.src = currentAvatar;
-    }
-    const homeAvatar = document.getElementById('homeProfileAvatarImg');
-    if (homeAvatar && homeAvatar.src !== currentAvatar) {
-      homeAvatar.src = currentAvatar;
-    }
-    const homeGreetingAvatar = document.getElementById('homeGreetingAvatarImg');
-    if (homeGreetingAvatar && homeGreetingAvatar.src !== currentAvatar) {
-      homeGreetingAvatar.src = currentAvatar;
-    }
-    if (profileModalAvatarImg && profileModalAvatarImg.src !== currentAvatar) {
-      profileModalAvatarImg.src = currentAvatar;
-    }
-
-    // 2. Update username everywhere (Default: USER)
-    const profileUserNameTitle = document.getElementById('profileUserNameTitle');
-    if (profileUserNameTitle && !profileUserNameTitle.querySelector('input') && profileUserNameTitle.textContent !== currentName) {
-      profileUserNameTitle.textContent = currentName;
-    }
-    const aboutYouUsername = document.getElementById('aboutYouUsername');
-    if (aboutYouUsername && aboutYouUsername.textContent !== currentName) {
-      aboutYouUsername.textContent = currentName;
-    }
-    const navProfileUserName = document.getElementById('navProfileUserName') || document.querySelector('#profileBadge .profile-user-name');
-    if (navProfileUserName && navProfileUserName.textContent !== currentName) {
-      navProfileUserName.textContent = currentName;
-    }
-    const homeProfileUserName = document.getElementById('homeProfileUserName');
-    if (homeProfileUserName && homeProfileUserName.textContent !== currentName) {
-      homeProfileUserName.textContent = currentName;
-    }
-    const homeGreetingUsername = document.getElementById('homeGreetingUsername');
-    if (homeGreetingUsername && homeGreetingUsername.textContent !== currentName) {
-      homeGreetingUsername.textContent = currentName;
-    }
-    const profileBadgePill = document.getElementById('profileBadge');
-    if (profileBadgePill) profileBadgePill.title = `User Profile: ${currentName}`;
-    const homeProfileBadge = document.getElementById('homeProfileBadge');
-    if (homeProfileBadge) homeProfileBadge.title = `User Profile: ${currentName}`;
-
-    // Ensure synchronized keys in localStorage
-    try {
-      localStorage.setItem('musico_profile_username', currentName);
-      localStorage.setItem('musico_profile_name', currentName);
-      if (currentAvatar && !currentAvatar.includes('default-avatar.svg')) {
-        localStorage.setItem('musico_profile_image', currentAvatar);
-        localStorage.setItem('musico_profile_avatar', currentAvatar);
-      }
-    } catch (_) {}
-
-    // 3. Days using Musico
-    const days = Math.max(1, Math.floor((Date.now() - ((profile && profile.firstLaunchDate) || Date.now())) / (1000 * 60 * 60 * 24)));
-    const profileDaysLabel = document.getElementById('profileDaysLabel');
-    if (profileDaysLabel) {
-      const daysText = `Using Atsuko for ${days} days`;
-      if (profileDaysLabel.textContent !== daysText) {
-        profileDaysLabel.textContent = daysText;
-      }
-    }
-
-    // 4. Joined date in About You
-    const aboutYouJoined = document.getElementById('aboutYouJoined');
-    if (aboutYouJoined) {
-      const dateObj = new Date((profile && profile.firstLaunchDate) || Date.now());
-      const joinedStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      if (aboutYouJoined.textContent !== joinedStr) {
-        aboutYouJoined.textContent = joinedStr;
-      }
-    }
-  }
-
-  // Double-click / Edit button to change username inline
-  function startEditingUserName() {
-    const titleEl = document.getElementById('profileUserNameTitle');
-    if (!titleEl || titleEl.querySelector('input')) return;
-
-    const currentName = titleEl.textContent.trim() || 'USER';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'profile-name-edit-input';
-    input.value = currentName === 'USER' ? '' : currentName;
-    input.placeholder = 'Enter name...';
-    input.maxLength = 28;
-
-    let isSaved = false;
-
-    const saveName = async () => {
-      if (isSaved) return;
-      isSaved = true;
-
-      const rawVal = input.value.trim();
-      const newName = rawVal ? rawVal : 'USER';
-      titleEl.textContent = newName;
-
-      // Update in DOM everywhere
-      const aboutYou = document.getElementById('aboutYouUsername');
-      if (aboutYou) aboutYou.textContent = newName;
-      const navName = document.getElementById('navProfileUserName') || document.querySelector('#profileBadge .profile-user-name');
-      if (navName) navName.textContent = newName;
-      const homeName = document.getElementById('homeProfileUserName');
-      if (homeName) homeName.textContent = newName;
-      const homeGreeting = document.getElementById('homeGreetingUsername');
-      if (homeGreeting) homeGreeting.textContent = newName;
-      const profileBadgePill = document.getElementById('profileBadge');
-      if (profileBadgePill) profileBadgePill.title = `User Profile: ${newName}`;
-      const homeProfileBadge = document.getElementById('homeProfileBadge');
-      if (homeProfileBadge) homeProfileBadge.title = `User Profile: ${newName}`;
-
-      // Persist to storage across both keys
-      try {
-        localStorage.setItem('musico_profile_username', newName);
-        localStorage.setItem('musico_profile_name', newName);
-      } catch (_) {}
-
-      const fm = window.fileManager || window.appFileManager || fileManager;
-      if (fm && typeof fm.saveProfileUsername === 'function') {
-        await fm.saveProfileUsername(newName);
-      } else {
-        localStorage.setItem('musico_profile_username', newName);
-      }
-
-      showToast(`Username updated to "${newName}"`);
-    };
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        input.blur();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        isSaved = true;
-        titleEl.textContent = currentName;
-      }
-    });
-
-    input.addEventListener('blur', () => {
-      saveName();
-    });
-
-    titleEl.textContent = '';
-    titleEl.appendChild(input);
-    input.focus();
-    input.select();
-  }
-
-  const profileUserNameTitle = document.getElementById('profileUserNameTitle');
-  if (profileUserNameTitle) {
-    profileUserNameTitle.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      startEditingUserName();
-    });
-  }
-
-  const editUserNameBtn = document.getElementById('editUserNameBtn');
-  if (editUserNameBtn) {
-    editUserNameBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      startEditingUserName();
-    });
-  }
-
-  const aboutYouUsername = document.getElementById('aboutYouUsername');
-  if (aboutYouUsername) {
-    aboutYouUsername.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      startEditingUserName();
-    });
-  }
-
-  initUserProfile();
-
-  // Instant Tab switching inside Profile Modal
-  function switchProfileModalTab(tabName) {
-    if (tabName === 'stats') {
-      if (profileTabBtn) profileTabBtn.classList.remove('active');
-      if (statsTabBtn) statsTabBtn.classList.add('active');
-      if (profileTabContent) profileTabContent.style.display = 'none';
-      if (statsTabContent) statsTabContent.style.display = 'flex';
-      
-      if (!_isStatsTabRendered || _statsDataDirty) {
-        renderMusicoStats();
-        _isStatsTabRendered = true;
-        _statsDataDirty = false;
-      }
-    } else {
-      if (profileTabBtn) profileTabBtn.classList.add('active');
-      if (statsTabBtn) statsTabBtn.classList.remove('active');
-      if (profileTabContent) profileTabContent.style.display = 'flex';
-      if (statsTabContent) statsTabContent.style.display = 'none';
-
-      if (!_isProfileTabRendered || _profileDataDirty) {
-        renderProfileTab();
-        _isProfileTabRendered = true;
-        _profileDataDirty = false;
-      }
-    }
-  }
-
-  if (profileTabBtn) {
-    profileTabBtn.addEventListener('click', () => switchProfileModalTab('profile'));
-  }
-  if (statsTabBtn) {
-    statsTabBtn.addEventListener('click', () => switchProfileModalTab('stats'));
-  }
-
-  function openProfileModal() {
-    _profileModalOpen = true;
-    initUserProfile();
-    renderProfileTab();
-    _isProfileTabRendered = true;
-    _profileDataDirty = false;
-    switchProfileModalTab('profile');
-    if (profileModal) profileModal.classList.add('open');
-
-    // Pre-render stats in the next idle animation frame for instant zero-lag switching
-    requestAnimationFrame(() => {
-      renderMusicoStats();
-      _isStatsTabRendered = true;
-      _statsDataDirty = false;
-    });
-  }
-  window.openProfileModal = openProfileModal;
-
-  // Open & Close Profile Modal
-  const allProfileBadges = [profileBadge, document.getElementById('homeProfileBadge')].filter(Boolean);
-  allProfileBadges.forEach(badge => {
-    badge.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openProfileModal();
-    });
-  });
-
-  if (closeProfileBtn && profileModal) {
-    closeProfileBtn.addEventListener('click', () => {
-      _profileModalOpen = false;
-      profileModal.classList.remove('open');
-    });
-  }
-
-  if (profileModal) {
-    profileModal.addEventListener('click', (e) => {
-      if (e.target === profileModal) {
-        _profileModalOpen = false;
-        profileModal.classList.remove('open');
-      }
-    });
-  }
-
-  // Change Profile Picture Handler
-  function triggerProfileImagePicker() {
-    if (profileImageFileInput) profileImageFileInput.click();
-  }
-
-  if (changeProfileImageBtn) changeProfileImageBtn.addEventListener('click', triggerProfileImagePicker);
-  if (profileAvatarEditBadge) profileAvatarEditBadge.addEventListener('click', (e) => { e.stopPropagation(); triggerProfileImagePicker(); });
-  if (profileAvatarWrap) profileAvatarWrap.addEventListener('click', triggerProfileImagePicker);
-
-  if (profileImageFileInput) {
-    profileImageFileInput.addEventListener('change', async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-
-      if (!file.type.startsWith('image/')) {
-        showToast('Please select a valid image file');
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const dataUrl = event.target.result;
-        const fm = window.fileManager || window.appFileManager || fileManager;
-        if (fm && typeof fm.saveProfileImage === 'function') {
-          await fm.saveProfileImage(dataUrl);
-        }
-
-        try {
-          localStorage.setItem('musico_profile_image', dataUrl);
-          localStorage.setItem('musico_profile_avatar', dataUrl);
-        } catch (_) {}
-
-        const navAvatar = document.querySelector('#profileBadge .profile-avatar-img');
-        if (navAvatar) navAvatar.src = dataUrl;
-        const homeAvatar = document.getElementById('homeProfileAvatarImg');
-        if (homeAvatar) homeAvatar.src = dataUrl;
-        const homeGreetingAvatar = document.getElementById('homeGreetingAvatarImg');
-        if (homeGreetingAvatar) homeGreetingAvatar.src = dataUrl;
-        if (profileModalAvatarImg) profileModalAvatarImg.src = dataUrl;
-
-        showToast('Profile image updated');
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // Feedback Modal handlers
-  if (sendFeedbackBtn && feedbackModal) {
-    sendFeedbackBtn.addEventListener('click', () => {
-      if (feedbackTextarea) feedbackTextarea.value = '';
-      feedbackModal.classList.add('open');
-    });
-  }
-  if (closeFeedbackBtn && feedbackModal) {
-    closeFeedbackBtn.addEventListener('click', () => feedbackModal.classList.remove('open'));
-  }
-  if (cancelFeedbackBtn && feedbackModal) {
-    cancelFeedbackBtn.addEventListener('click', () => feedbackModal.classList.remove('open'));
-  }
-  if (feedbackModal) {
-    feedbackModal.addEventListener('click', (e) => {
-      if (e.target === feedbackModal) feedbackModal.classList.remove('open');
-    });
-  }
-  if (submitFeedbackBtn && feedbackModal) {
-    submitFeedbackBtn.addEventListener('click', async () => {
-      const text = feedbackTextarea ? feedbackTextarea.value.trim() : '';
-      if (!text) {
-        showToast('Please enter your feedback first');
-        return;
-      }
-      try {
-        const existing = JSON.parse(localStorage.getItem('musico_user_feedback') || '[]');
-        existing.push({ text, timestamp: Date.now() });
-        localStorage.setItem('musico_user_feedback', JSON.stringify(existing));
-      } catch (e) {}
-
-      showToast('Thank you for your feedback!');
-      feedbackModal.classList.remove('open');
-    });
-  }
-
-  // User Manual Modal handlers
-  if (userManualBtn && userManualModal) {
-    userManualBtn.addEventListener('click', () => userManualModal.classList.add('open'));
-  }
-  if (closeUserManualBtn && userManualModal) {
-    closeUserManualBtn.addEventListener('click', () => userManualModal.classList.remove('open'));
-  }
-  if (userManualModal) {
-    userManualModal.addEventListener('click', (e) => {
-      if (e.target === userManualModal) userManualModal.classList.remove('open');
-    });
-  }
-
-  // Render Profile Tab Details (O(1) from in-memory cache)
-  async function renderProfileTab() {
-    const fm = window.fileManager || window.appFileManager || fileManager;
-    if (!fm) return;
-    const stats = await fm.getPlaybackStats();
-
-    const totalSecs = Math.round(stats.totalListeningSeconds || 0);
-    const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-    let timeStr = '0 Minutes';
-    if (hours > 0) {
-      timeStr = mins > 0 ? `${hours} h ${mins} min` : `${hours} Hour${hours === 1 ? '' : 's'}`;
-    } else if (mins > 0) {
-      timeStr = `${mins} Minute${mins === 1 ? '' : 's'}`;
-    } else if (secs > 0) {
-      timeStr = `${secs} Seconds`;
-    }
-
-    const aboutYouListeningTime = document.getElementById('aboutYouListeningTime');
-    if (aboutYouListeningTime && aboutYouListeningTime.textContent !== timeStr) {
-      aboutYouListeningTime.textContent = timeStr;
-    }
-
-    // Recover songsPlayed count from tracks playCount if totalSongsPlayed is currently 0
-    let totalSongs = stats.totalSongsPlayed || 0;
-    if (totalSongs === 0 && allTracks && allTracks.length > 0) {
-      let sumPlays = 0;
-      allTracks.forEach(t => { if (t.playCount) sumPlays += t.playCount; });
-      if (sumPlays > 0) {
-        totalSongs = sumPlays;
-        stats.totalSongsPlayed = sumPlays;
-        fm.savePlaybackStats(stats);
-      }
-    }
-
-    const songsPlayedStr = totalSongs.toLocaleString();
-    const aboutYouSongsPlayed = document.getElementById('aboutYouSongsPlayed');
-    if (aboutYouSongsPlayed && aboutYouSongsPlayed.textContent !== songsPlayedStr) {
-      aboutYouSongsPlayed.textContent = songsPlayedStr;
-    }
-  }
-
-  // Render Musico Stats Tab Details (Optimized single-pass O(N) / O(1) calculations)
-  async function renderMusicoStats() {
-    const fm = window.fileManager || window.appFileManager || fileManager;
-    if (!fm) return;
-    const stats = await fm.getPlaybackStats();
-
-    // 1. Total Listening Time
-    const totalSecs = Math.round(stats.totalListeningSeconds || 0);
-    const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-    let timeStr = '0 Minutes';
-    if (hours > 0) {
-      timeStr = mins > 0 ? `${hours} h ${mins} min` : `${hours} Hour${hours === 1 ? '' : 's'}`;
-    } else if (mins > 0) {
-      timeStr = `${mins} Minute${mins === 1 ? '' : 's'}`;
-    } else if (secs > 0) {
-      timeStr = `${secs} Seconds`;
-    }
-    const statsTotalListeningTime = document.getElementById('statsTotalListeningTime');
-    if (statsTotalListeningTime && statsTotalListeningTime.textContent !== timeStr) {
-      statsTotalListeningTime.textContent = timeStr;
-    }
-
-    // 2. Songs Played (Recover from track playCounts if totalSongsPlayed is 0)
-    let totalSongs = stats.totalSongsPlayed || 0;
-    if (totalSongs === 0 && allTracks && allTracks.length > 0) {
-      let sumPlays = 0;
-      allTracks.forEach(t => { if (t.playCount) sumPlays += t.playCount; });
-      if (sumPlays > 0) {
-        totalSongs = sumPlays;
-        stats.totalSongsPlayed = sumPlays;
-        fm.savePlaybackStats(stats);
-      }
-    }
-    const songsPlayedStr = totalSongs.toLocaleString();
-    const statsTotalSongsPlayed = document.getElementById('statsTotalSongsPlayed');
-    if (statsTotalSongsPlayed && statsTotalSongsPlayed.textContent !== songsPlayedStr) {
-      statsTotalSongsPlayed.textContent = songsPlayedStr;
-    }
-
-    // 3. Days Using Musico
-    const days = Math.max(1, Math.floor((Date.now() - (stats.firstLaunchDate || Date.now())) / (1000 * 60 * 60 * 24)));
-    const statsDaysUsing = document.getElementById('statsDaysUsing');
-    const daysText = `${days} Days`;
-    if (statsDaysUsing && statsDaysUsing.textContent !== daysText) {
-      statsDaysUsing.textContent = daysText;
-    }
-
-    // 4. Most Played Song (Single-pass lookup)
-    let mostPlayedTrack = null;
-    let maxPlays = 0;
-    let topTrackId = null;
-    const trackPlayCounts = stats.trackPlayCounts || {};
-    for (const id in trackPlayCounts) {
-      if (trackPlayCounts[id] > maxPlays) {
-        maxPlays = trackPlayCounts[id];
-        topTrackId = id;
-      }
-    }
-
-    if (topTrackId && allTracks && allTracks.length > 0) {
-      for (let i = 0; i < allTracks.length; i++) {
-        if (allTracks[i].id === topTrackId || allTracks[i].name === topTrackId) {
-          mostPlayedTrack = allTracks[i];
-          break;
-        }
-      }
-    }
-
-    if (!mostPlayedTrack && allTracks && allTracks.length > 0) {
-      let fallbackMax = 0;
-      for (let i = 0; i < allTracks.length; i++) {
-        const pc = allTracks[i].playCount || 0;
-        if (pc > fallbackMax) {
-          fallbackMax = pc;
-          mostPlayedTrack = allTracks[i];
-        }
-      }
-    }
-
-    const statsMostPlayedTitle = document.getElementById('statsMostPlayedTitle');
-    const statsMostPlayedArtist = document.getElementById('statsMostPlayedArtist');
-    const statsMostPlayedThumb = document.getElementById('statsMostPlayedThumb');
-    if (mostPlayedTrack) {
-      const title = mostPlayedTrack.title || mostPlayedTrack.name || 'Untitled';
-      const artist = mostPlayedTrack.artist || 'Unknown Artist';
-      const cover = mostPlayedTrack.coverUrl || 'assets/atsuko.svg';
-      if (statsMostPlayedTitle && statsMostPlayedTitle.textContent !== title) statsMostPlayedTitle.textContent = title;
-      if (statsMostPlayedArtist && statsMostPlayedArtist.textContent !== artist) statsMostPlayedArtist.textContent = artist;
-      if (statsMostPlayedThumb && statsMostPlayedThumb.src !== cover) statsMostPlayedThumb.src = cover;
-    } else {
-      if (statsMostPlayedTitle && statsMostPlayedTitle.textContent !== 'No songs played yet') statsMostPlayedTitle.textContent = 'No songs played yet';
-      if (statsMostPlayedArtist && statsMostPlayedArtist.textContent !== '—') statsMostPlayedArtist.textContent = '—';
-      if (statsMostPlayedThumb && !statsMostPlayedThumb.src.includes('M%20logo.png')) statsMostPlayedThumb.src = 'assets/atsuko.svg';
-    }
-
-    // 5. Favorite Artist (Single-pass lookup)
-    let topArtist = null;
-    let topArtistPlays = 0;
-    const artistPlayCounts = stats.artistPlayCounts || {};
-    for (const art in artistPlayCounts) {
-      if (artistPlayCounts[art] > topArtistPlays) {
-        topArtistPlays = artistPlayCounts[art];
-        topArtist = art;
-      }
-    }
-
-    if (!topArtist && allTracks && allTracks.length > 0) {
-      const artMap = Object.create(null);
-      let maxArtScore = 0;
-      for (let i = 0; i < allTracks.length; i++) {
-        const t = allTracks[i];
-        const a = (t.artist || '').trim();
-        if (a && a !== 'Unknown Artist' && a !== 'Unknown') {
-          const score = (artMap[a] || 0) + (t.isFavorite ? 3 : 1) + (t.playCount || 0);
-          artMap[a] = score;
-          if (score > maxArtScore) {
-            maxArtScore = score;
-            topArtist = a;
+          if (settingsVolumeSlider) {
+            settingsVolumeSlider.value = player.volume * 100;
+            settingsVolumeSlider.addEventListener('input', (e) => {
+              player.setVolume(e.target.value / 100);
+            });
           }
-        }
-      }
-    }
 
-    const statsFavArtistTitle = document.getElementById('statsFavArtistTitle');
-    const statsFavArtistSub = document.getElementById('statsFavArtistSub');
-    const statsFavArtistThumb = document.getElementById('statsFavArtistThumb');
-    if (topArtist) {
-      if (statsFavArtistTitle && statsFavArtistTitle.textContent !== topArtist) {
-        statsFavArtistTitle.textContent = topArtist;
-      }
-      let artistSongCount = 0;
-      let coverUrl = null;
-      const lowerArt = topArtist.toLowerCase();
-      if (allTracks) {
-        for (let i = 0; i < allTracks.length; i++) {
-          const t = allTracks[i];
-          if ((t.artist || '').toLowerCase() === lowerArt) {
-            artistSongCount++;
-            if (!coverUrl && t.coverUrl && !t.coverUrl.includes('M logo')) {
-              coverUrl = t.coverUrl;
+          // Drag and drop audio files onto window (Combined library)
+          window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            document.body.classList.add('drag-over');
+          });
+
+          window.addEventListener('dragleave', (e) => {
+            if (e.clientX === 0 || e.clientY === 0) {
+              document.body.classList.remove('drag-over');
+            }
+          });
+
+          window.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            document.body.classList.remove('drag-over');
+
+            const rawFiles = Array.from(e.dataTransfer.files || []);
+            const files = rawFiles.filter(f => FileManager.isAudioFile(f));
+
+            if (files.length > 0) {
+              handleSelectedAudioFiles(files);
+            }
+          });
+
+          // Global Keyboard Shortcuts
+          window.addEventListener('keydown', (e) => {
+            const active = document.activeElement;
+            if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
+
+            // Keyboard Shortcut — L (Open / Exit Full View)
+            if (e.code === 'KeyL' || e.key === 'l' || e.key === 'L') {
+              const active = document.activeElement;
+              if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
+              if (e.ctrlKey || e.altKey || e.metaKey) return;
+              e.preventDefault();
+              if (isSongFullViewOpen) {
+                closeSongFullView();
+              } else {
+                if (!player || !player.currentTrack || !isSongTrackPlayable(player.currentTrack)) {
+                  return;
+                }
+                openSongFullView();
+              }
+              return;
+            }
+
+            if (e.code === 'Space') {
+              e.preventDefault();
+              if (typeof isSongFullViewOpen !== 'undefined' && isSongFullViewOpen) {
+                handleFullViewSpaceOrScreenClick();
+                return;
+              }
+              if (allTracks.length === 0) {
+                handleAddMusic();
+              } else {
+                player.togglePlay();
+              }
+            } else if (e.code === 'ArrowRight') {
+              e.preventDefault();
+              player.seek(Math.min(100, ((player.audio.currentTime + 5) / (player.audio.duration || 1)) * 100));
+            } else if (e.code === 'ArrowLeft') {
+              e.preventDefault();
+              player.seek(Math.max(0, ((player.audio.currentTime - 5) / (player.audio.duration || 1)) * 100));
+            } else if (e.code === 'KeyN') {
+              player.next();
+            } else if (e.code === 'KeyP') {
+              player.prev();
+            } else if (e.code === 'KeyS') {
+              filterShuffleBtn && filterShuffleBtn.click();
+            } else if (currentView === 'recorder') {
+              if (e.code === 'KeyA') {
+                currentRecorderPcMode = 1;
+                updateRecorderEqualizerBars();
+                renderRecorderListView();
+              } else if (e.code === 'KeyD') {
+                currentRecorderPcMode = 2;
+                updateRecorderEqualizerBars();
+                renderRecorderGridView();
+              } else if (e.code === 'KeyR') {
+                if (isRecordingAudio) {
+                  stopAudioRecording();
+                } else {
+                  startAudioRecording();
+                }
+              }
+            }
+          });
+
+          // Helper to escape HTML strings
+          function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+          }
+
+          // Start app
+          applyTheme(currentTheme);
+          await initAtsukoDataAndLibrary();
+          player.updatePlaybackModeUI();
+
+          // =========================================================================
+          // SINGLE-INSTANCE WINDOW COORDINATOR (PC / Windows PWA)
+          // Prevents opening duplicate windows when user launches Musico again.
+          // =========================================================================
+          if ('launchQueue' in window && 'setConsumer' in window.launchQueue) {
+            window.launchQueue.setConsumer(() => {
+              window.focus();
+            });
+          }
+
+          // =========================================================================
+          // =========================================================================
+          // PROFILE & MUSICO STATS CONTROLLER (PC VIEW ONLY) - HIGH PERFORMANCE
+          // =========================================================================
+          const profileBadge = document.getElementById('profileBadge');
+          const profileModal = document.getElementById('profileModal');
+          const closeProfileBtn = document.getElementById('closeProfileBtn');
+          const profileTabBtn = document.getElementById('profileTabBtn');
+          const statsTabBtn = document.getElementById('statsTabBtn');
+          const profileTabContent = document.getElementById('profileTabContent');
+          const statsTabContent = document.getElementById('statsTabContent');
+
+          const profileImageFileInput = document.getElementById('profileImageFileInput');
+          const changeProfileImageBtn = document.getElementById('changeProfileImageBtn');
+          const profileAvatarEditBadge = document.getElementById('profileAvatarEditBadge');
+          const profileAvatarWrap = document.getElementById('profileAvatarWrap');
+          const profileModalAvatarImg = document.getElementById('profileModalAvatarImg');
+
+          const sendFeedbackBtn = document.getElementById('sendFeedbackBtn');
+          const feedbackModal = document.getElementById('feedbackModal');
+          const closeFeedbackBtn = document.getElementById('closeFeedbackBtn');
+          const cancelFeedbackBtn = document.getElementById('cancelFeedbackBtn');
+          const submitFeedbackBtn = document.getElementById('submitFeedbackBtn');
+          const feedbackTextarea = document.getElementById('feedbackTextarea');
+
+          const userManualBtn = document.getElementById('userManualBtn');
+          const userManualModal = document.getElementById('userManualModal');
+          const closeUserManualBtn = document.getElementById('closeUserManualBtn');
+
+          // Performance cache flags
+          let _isProfileTabRendered = false;
+          let _isStatsTabRendered = false;
+          let _statsDataDirty = true;
+          let _profileDataDirty = true;
+          let _profileModalOpen = false;
+          let _realtimeUpdateTimeout = null;
+
+          // Load and apply initial profile data
+          async function initUserProfile() {
+            const fm = window.fileManager || window.appFileManager || fileManager;
+            let profile = null;
+            if (fm && typeof fm.getProfileData === 'function') {
+              try {
+                profile = await fm.getProfileData();
+              } catch (_) { }
+            }
+
+            const currentAvatar = (profile && profile.avatarUrl) || localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar') || 'assets/default-avatar.svg';
+            let currentName = (profile && (profile.username || profile.name)) || localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'USER';
+            if (currentName === 'v22' || currentName === 'V22') {
+              currentName = localStorage.getItem('atsuko_last_valid_username') || localStorage.getItem('atsuko_previous_username') || 'USER';
+              try {
+                localStorage.setItem('musico_profile_username', currentName);
+                localStorage.setItem('musico_profile_name', currentName);
+              } catch (_) { }
+            }
+
+            // 1. Update avatars across all badges, greeting, and modal
+            const navAvatar = document.querySelector('#profileBadge .profile-avatar-img');
+            if (navAvatar && navAvatar.src !== currentAvatar) {
+              navAvatar.src = currentAvatar;
+            }
+            const homeAvatar = document.getElementById('homeProfileAvatarImg');
+            if (homeAvatar && homeAvatar.src !== currentAvatar) {
+              homeAvatar.src = currentAvatar;
+            }
+            const homeGreetingAvatar = document.getElementById('homeGreetingAvatarImg');
+            if (homeGreetingAvatar && homeGreetingAvatar.src !== currentAvatar) {
+              homeGreetingAvatar.src = currentAvatar;
+            }
+            if (profileModalAvatarImg && profileModalAvatarImg.src !== currentAvatar) {
+              profileModalAvatarImg.src = currentAvatar;
+            }
+
+            // 2. Update username everywhere (Default: USER)
+            const profileUserNameTitle = document.getElementById('profileUserNameTitle');
+            if (profileUserNameTitle && !profileUserNameTitle.querySelector('input') && profileUserNameTitle.textContent !== currentName) {
+              profileUserNameTitle.textContent = currentName;
+            }
+            const aboutYouUsername = document.getElementById('aboutYouUsername');
+            if (aboutYouUsername && aboutYouUsername.textContent !== currentName) {
+              aboutYouUsername.textContent = currentName;
+            }
+            const navProfileUserName = document.getElementById('navProfileUserName') || document.querySelector('#profileBadge .profile-user-name');
+            if (navProfileUserName && navProfileUserName.textContent !== currentName) {
+              navProfileUserName.textContent = currentName;
+            }
+            const homeProfileUserName = document.getElementById('homeProfileUserName');
+            if (homeProfileUserName && homeProfileUserName.textContent !== currentName) {
+              homeProfileUserName.textContent = currentName;
+            }
+            const homeGreetingUsername = document.getElementById('homeGreetingUsername');
+            if (homeGreetingUsername && homeGreetingUsername.textContent !== currentName) {
+              homeGreetingUsername.textContent = currentName;
+            }
+            const profileBadgePill = document.getElementById('profileBadge');
+            if (profileBadgePill) profileBadgePill.title = `User Profile: ${currentName}`;
+            const homeProfileBadge = document.getElementById('homeProfileBadge');
+            if (homeProfileBadge) homeProfileBadge.title = `User Profile: ${currentName}`;
+
+            // Ensure synchronized keys in localStorage
+            try {
+              localStorage.setItem('musico_profile_username', currentName);
+              localStorage.setItem('musico_profile_name', currentName);
+              if (currentAvatar && !currentAvatar.includes('default-avatar.svg')) {
+                localStorage.setItem('musico_profile_image', currentAvatar);
+                localStorage.setItem('musico_profile_avatar', currentAvatar);
+              }
+            } catch (_) { }
+
+            // 3. Days using Musico
+            const days = Math.max(1, Math.floor((Date.now() - ((profile && profile.firstLaunchDate) || Date.now())) / (1000 * 60 * 60 * 24)));
+            const profileDaysLabel = document.getElementById('profileDaysLabel');
+            if (profileDaysLabel) {
+              const daysText = `Using Atsuko for ${days} days`;
+              if (profileDaysLabel.textContent !== daysText) {
+                profileDaysLabel.textContent = daysText;
+              }
+            }
+
+            // 4. Joined date in About You
+            const aboutYouJoined = document.getElementById('aboutYouJoined');
+            if (aboutYouJoined) {
+              const dateObj = new Date((profile && profile.firstLaunchDate) || Date.now());
+              const joinedStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+              if (aboutYouJoined.textContent !== joinedStr) {
+                aboutYouJoined.textContent = joinedStr;
+              }
             }
           }
-        }
-      }
-      const countStr = `${artistSongCount} song${artistSongCount === 1 ? '' : 's'}`;
-      if (statsFavArtistSub && statsFavArtistSub.textContent !== countStr) statsFavArtistSub.textContent = countStr;
-      const finalThumb = coverUrl || 'assets/atsuko.svg';
-      if (statsFavArtistThumb && statsFavArtistThumb.src !== finalThumb) statsFavArtistThumb.src = finalThumb;
-    } else {
-      if (statsFavArtistTitle && statsFavArtistTitle.textContent !== 'No artist data yet') statsFavArtistTitle.textContent = 'No artist data yet';
-      if (statsFavArtistSub && statsFavArtistSub.textContent !== '—') statsFavArtistSub.textContent = '—';
-      if (statsFavArtistThumb && !statsFavArtistThumb.src.includes('M%20logo.png')) statsFavArtistThumb.src = 'assets/atsuko.svg';
-    }
 
-    // 6. Favorite Album (Single-pass lookup)
-    let topAlbum = null;
-    let topAlbumPlays = 0;
-    const albumPlayCounts = stats.albumPlayCounts || {};
-    for (const alb in albumPlayCounts) {
-      if (albumPlayCounts[alb] > topAlbumPlays) {
-        topAlbumPlays = albumPlayCounts[alb];
-        topAlbum = alb;
-      }
-    }
+          // Double-click / Edit button to change username inline
+          function startEditingUserName() {
+            const titleEl = document.getElementById('profileUserNameTitle');
+            if (!titleEl || titleEl.querySelector('input')) return;
 
-    if (!topAlbum && allTracks && allTracks.length > 0) {
-      const albMap = Object.create(null);
-      let maxAlbScore = 0;
-      for (let i = 0; i < allTracks.length; i++) {
-        const t = allTracks[i];
-        const a = (t.album || '').trim();
-        if (a && a !== 'Unknown Album' && a !== 'Unknown') {
-          const score = (albMap[a] || 0) + (t.isFavorite ? 3 : 1) + (t.playCount || 0);
-          albMap[a] = score;
-          if (score > maxAlbScore) {
-            maxAlbScore = score;
-            topAlbum = a;
+            const currentName = titleEl.textContent.trim() || 'USER';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'profile-name-edit-input';
+            input.value = currentName === 'USER' ? '' : currentName;
+            input.placeholder = 'Enter name...';
+            input.maxLength = 28;
+
+            let isSaved = false;
+
+            const saveName = async () => {
+              if (isSaved) return;
+              isSaved = true;
+
+              const rawVal = input.value.trim();
+              const newName = rawVal ? rawVal : 'USER';
+              titleEl.textContent = newName;
+
+              // Update in DOM everywhere
+              const aboutYou = document.getElementById('aboutYouUsername');
+              if (aboutYou) aboutYou.textContent = newName;
+              const navName = document.getElementById('navProfileUserName') || document.querySelector('#profileBadge .profile-user-name');
+              if (navName) navName.textContent = newName;
+              const homeName = document.getElementById('homeProfileUserName');
+              if (homeName) homeName.textContent = newName;
+              const homeGreeting = document.getElementById('homeGreetingUsername');
+              if (homeGreeting) homeGreeting.textContent = newName;
+              const profileBadgePill = document.getElementById('profileBadge');
+              if (profileBadgePill) profileBadgePill.title = `User Profile: ${newName}`;
+              const homeProfileBadge = document.getElementById('homeProfileBadge');
+              if (homeProfileBadge) homeProfileBadge.title = `User Profile: ${newName}`;
+
+              // Persist to storage across both keys
+              try {
+                const prev = localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name') || 'new';
+                if (prev && prev !== newName && prev !== 'v22' && prev !== 'V22' && prev !== 'USER') {
+                  localStorage.setItem('atsuko_previous_username', prev);
+                }
+                if (newName && newName !== 'v22' && newName !== 'V22') {
+                  localStorage.setItem('atsuko_last_valid_username', newName);
+                }
+                localStorage.setItem('musico_profile_username', newName);
+                localStorage.setItem('musico_profile_name', newName);
+              } catch (_) { }
+
+              const fm = window.fileManager || window.appFileManager || fileManager;
+              if (fm && typeof fm.saveProfileUsername === 'function') {
+                await fm.saveProfileUsername(newName);
+              } else {
+                localStorage.setItem('musico_profile_username', newName);
+              }
+
+              if (window.dataFolderService) {
+                window.dataFolderService.isReconciled = true;
+                window.dataFolderService.pendingReconciliation = false;
+                if (!window.dataFolderService.originalAtuProfile) {
+                  window.dataFolderService.originalAtuProfile = {};
+                }
+                window.dataFolderService.originalAtuProfile.username = newName;
+                if (window.dataFolderService.cachedData) {
+                  if (!window.dataFolderService.cachedData.profile) window.dataFolderService.cachedData.profile = {};
+                  window.dataFolderService.cachedData.profile.username = newName;
+                }
+              }
+              if (typeof window.syncToAtu === 'function') {
+                window.syncToAtu(true);
+              }
+
+              showToast(`Username updated to "${newName}"`);
+            };
+
+            input.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                input.blur();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                isSaved = true;
+                titleEl.textContent = currentName;
+              }
+            });
+
+            input.addEventListener('blur', () => {
+              saveName();
+            });
+
+            titleEl.textContent = '';
+            titleEl.appendChild(input);
+            input.focus();
+            input.select();
           }
-        }
-      }
-    }
 
-    const statsFavAlbumTitle = document.getElementById('statsFavAlbumTitle');
-    const statsFavAlbumSub = document.getElementById('statsFavAlbumSub');
-    const statsFavAlbumThumb = document.getElementById('statsFavAlbumThumb');
-    if (topAlbum) {
-      if (statsFavAlbumTitle && statsFavAlbumTitle.textContent !== topAlbum) {
-        statsFavAlbumTitle.textContent = topAlbum;
-      }
-      let albArtist = 'Various Artists';
-      let coverUrl = null;
-      const lowerAlb = topAlbum.toLowerCase();
-      if (allTracks) {
-        for (let i = 0; i < allTracks.length; i++) {
-          const t = allTracks[i];
-          if ((t.album || '').toLowerCase() === lowerAlb) {
-            if (t.artist && albArtist === 'Various Artists') albArtist = t.artist;
-            if (!coverUrl && t.coverUrl && !t.coverUrl.includes('M logo')) {
-              coverUrl = t.coverUrl;
+          const profileUserNameTitle = document.getElementById('profileUserNameTitle');
+          if (profileUserNameTitle) {
+            profileUserNameTitle.addEventListener('dblclick', (e) => {
+              e.stopPropagation();
+              startEditingUserName();
+            });
+          }
+
+          const editUserNameBtn = document.getElementById('editUserNameBtn');
+          if (editUserNameBtn) {
+            editUserNameBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              startEditingUserName();
+            });
+          }
+
+          const aboutYouUsername = document.getElementById('aboutYouUsername');
+          if (aboutYouUsername) {
+            aboutYouUsername.addEventListener('dblclick', (e) => {
+              e.stopPropagation();
+              startEditingUserName();
+            });
+          }
+
+          initUserProfile();
+
+          // Instant Tab switching inside Profile Modal
+          function switchProfileModalTab(tabName) {
+            if (tabName === 'stats') {
+              if (profileTabBtn) profileTabBtn.classList.remove('active');
+              if (statsTabBtn) statsTabBtn.classList.add('active');
+              if (profileTabContent) profileTabContent.style.display = 'none';
+              if (statsTabContent) statsTabContent.style.display = 'flex';
+
+              if (!_isStatsTabRendered || _statsDataDirty) {
+                renderMusicoStats();
+                _isStatsTabRendered = true;
+                _statsDataDirty = false;
+              }
+            } else {
+              if (profileTabBtn) profileTabBtn.classList.add('active');
+              if (statsTabBtn) statsTabBtn.classList.remove('active');
+              if (profileTabContent) profileTabContent.style.display = 'flex';
+              if (statsTabContent) statsTabContent.style.display = 'none';
+
+              if (!_isProfileTabRendered || _profileDataDirty) {
+                renderProfileTab();
+                _isProfileTabRendered = true;
+                _profileDataDirty = false;
+              }
             }
           }
-        }
-      }
-      if (statsFavAlbumSub && statsFavAlbumSub.textContent !== albArtist) statsFavAlbumSub.textContent = albArtist;
-      const finalThumb = coverUrl || 'assets/atsuko-no-cover-image.svg';
-      if (statsFavAlbumThumb && statsFavAlbumThumb.src !== finalThumb) statsFavAlbumThumb.src = finalThumb;
-    } else {
-      if (statsFavAlbumTitle && statsFavAlbumTitle.textContent !== 'No album data yet') statsFavAlbumTitle.textContent = 'No album data yet';
-      if (statsFavAlbumSub && statsFavAlbumSub.textContent !== '—') statsFavAlbumSub.textContent = '—';
-      if (statsFavAlbumThumb && !statsFavAlbumThumb.src.includes('M%20logo%20for%20music%20items.png')) statsFavAlbumThumb.src = 'assets/atsuko-no-cover-image.svg';
-    }
 
-    // 7. Favorite Genre (O(1))
-    let topGenre = null;
-    let topGenrePlays = 0;
-    const genrePlayCounts = stats.genrePlayCounts || {};
-    for (const gen in genrePlayCounts) {
-      if (genrePlayCounts[gen] > topGenrePlays) {
-        topGenrePlays = genrePlayCounts[gen];
-        topGenre = gen;
-      }
-    }
-    if (!topGenre) topGenre = 'Melancholic';
-    const statsFavGenre = document.getElementById('statsFavGenre');
-    if (statsFavGenre && statsFavGenre.textContent !== topGenre) statsFavGenre.textContent = topGenre;
+          if (profileTabBtn) {
+            profileTabBtn.addEventListener('click', () => switchProfileModalTab('profile'));
+          }
+          if (statsTabBtn) {
+            statsTabBtn.addEventListener('click', () => switchProfileModalTab('stats'));
+          }
 
-    // 8. Favorite Language (O(1))
-    let topLanguage = null;
-    let topLangPlays = 0;
-    const langPlayCounts = stats.languagePlayCounts || {};
-    for (const lang in langPlayCounts) {
-      if (langPlayCounts[lang] > topLangPlays) {
-        topLangPlays = langPlayCounts[lang];
-        topLanguage = lang;
-      }
-    }
-    if (!topLanguage) topLanguage = 'Offline Local';
-    const statsFavLanguage = document.getElementById('statsFavLanguage');
-    if (statsFavLanguage && statsFavLanguage.textContent !== topLanguage) statsFavLanguage.textContent = topLanguage;
+          function openProfileModal() {
+            _profileModalOpen = true;
+            initUserProfile();
+            renderProfileTab();
+            _isProfileTabRendered = true;
+            _profileDataDirty = false;
+            switchProfileModalTab('profile');
+            if (profileModal) profileModal.classList.add('open');
 
-    // 9. Most Active Listening Time Period (O(1))
-    const dist = stats.timeDistribution || { morning: 0, afternoon: 0, evening: 0, night: 0 };
-    const totalDistSecs = (dist.morning || 0) + (dist.afternoon || 0) + (dist.evening || 0) + (dist.night || 0);
+            // Pre-render stats in the next idle animation frame for instant zero-lag switching
+            requestAnimationFrame(() => {
+              renderMusicoStats();
+              _isStatsTabRendered = true;
+              _statsDataDirty = false;
+            });
+          }
+          window.openProfileModal = openProfileModal;
 
-    const periods = [
-      { name: 'Morning', sub: '(6 AM – 12 PM)', val: dist.morning || 0 },
-      { name: 'Afternoon', sub: '(12 PM – 6 PM)', val: dist.afternoon || 0 },
-      { name: 'Evening', sub: '(6 PM – 12 AM)', val: dist.evening || 0 },
-      { name: 'Night', sub: '(12 AM – 6 AM)', val: dist.night || 0 }
-    ];
+          // Open & Close Profile Modal
+          const allProfileBadges = [profileBadge, document.getElementById('homeProfileBadge')].filter(Boolean);
+          allProfileBadges.forEach(badge => {
+            badge.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openProfileModal();
+            });
+          });
 
-    periods.sort((a, b) => b.val - a.val);
-    const topPeriod = periods[0].val > 0 ? periods[0] : { name: 'Evening', sub: '(6 PM – 12 AM)' };
+          if (closeProfileBtn && profileModal) {
+            closeProfileBtn.addEventListener('click', () => {
+              _profileModalOpen = false;
+              profileModal.classList.remove('open');
+            });
+          }
 
-    const statsMostActivePeriod = document.getElementById('statsMostActivePeriod');
-    const statsMostActivePeriodSub = document.getElementById('statsMostActivePeriodSub');
-    if (statsMostActivePeriod && statsMostActivePeriod.textContent !== topPeriod.name) statsMostActivePeriod.textContent = topPeriod.name;
-    if (statsMostActivePeriodSub && statsMostActivePeriodSub.textContent !== topPeriod.sub) statsMostActivePeriodSub.textContent = topPeriod.sub;
+          if (profileModal) {
+            profileModal.addEventListener('click', (e) => {
+              if (e.target === profileModal) {
+                _profileModalOpen = false;
+                profileModal.classList.remove('open');
+              }
+            });
+          }
 
-    // 10. Listening Time Distribution Percentages (O(1))
-    let mPct = 0, aPct = 0, ePct = 0, nPct = 0;
-    if (totalDistSecs > 0) {
-      mPct = Math.round(((dist.morning || 0) / totalDistSecs) * 100);
-      aPct = Math.round(((dist.afternoon || 0) / totalDistSecs) * 100);
-      ePct = Math.round(((dist.evening || 0) / totalDistSecs) * 100);
-      nPct = Math.max(0, 100 - mPct - aPct - ePct);
-    }
+          // Change Profile Picture Handler
+          function triggerProfileImagePicker() {
+            if (profileImageFileInput) profileImageFileInput.click();
+          }
 
-    const distMorningPct = document.getElementById('distMorningPct');
-    const distAfternoonPct = document.getElementById('distAfternoonPct');
-    const distEveningPct = document.getElementById('distEveningPct');
-    const distNightPct = document.getElementById('distNightPct');
+          if (changeProfileImageBtn) changeProfileImageBtn.addEventListener('click', triggerProfileImagePicker);
+          if (profileAvatarEditBadge) profileAvatarEditBadge.addEventListener('click', (e) => { e.stopPropagation(); triggerProfileImagePicker(); });
+          if (profileAvatarWrap) profileAvatarWrap.addEventListener('click', triggerProfileImagePicker);
 
-    const distMorningFill = document.getElementById('distMorningFill');
-    const distAfternoonFill = document.getElementById('distAfternoonFill');
-    const distEveningFill = document.getElementById('distEveningFill');
-    const distNightFill = document.getElementById('distNightFill');
+          if (profileImageFileInput) {
+            profileImageFileInput.addEventListener('change', async (e) => {
+              const file = e.target.files && e.target.files[0];
+              if (!file) return;
 
-    const mStr = `${mPct}%`, aStr = `${aPct}%`, eStr = `${ePct}%`, nStr = `${nPct}%`;
-    if (distMorningPct && distMorningPct.textContent !== mStr) distMorningPct.textContent = mStr;
-    if (distAfternoonPct && distAfternoonPct.textContent !== aStr) distAfternoonPct.textContent = aStr;
-    if (distEveningPct && distEveningPct.textContent !== eStr) distEveningPct.textContent = eStr;
-    if (distNightPct && distNightPct.textContent !== nStr) distNightPct.textContent = nStr;
+              if (!file.type.startsWith('image/')) {
+                showToast('Please select a valid image file');
+                return;
+              }
 
-    if (distMorningFill && distMorningFill.style.width !== mStr) distMorningFill.style.width = mStr;
-    if (distAfternoonFill && distAfternoonFill.style.width !== aStr) distAfternoonFill.style.width = aStr;
-    if (distEveningFill && distEveningFill.style.width !== eStr) distEveningFill.style.width = eStr;
-    if (distNightFill && distNightFill.style.width !== nStr) distNightFill.style.width = nStr;
-  }
+              const reader = new FileReader();
+              reader.onload = async (event) => {
+                const dataUrl = event.target.result;
+                const fm = window.fileManager || window.appFileManager || fileManager;
+                if (fm && typeof fm.saveProfileImage === 'function') {
+                  await fm.saveProfileImage(dataUrl);
+                }
 
-  // Real-time debounced updates when tracks change while modal is open
-  const origOnMusicoTrackChange = window.onMusicoTrackChange;
-  window.onMusicoTrackChange = function(track) {
-    if (typeof origOnMusicoTrackChange === 'function') {
-      origOnMusicoTrackChange(track);
-    }
-    _statsDataDirty = true;
-    _profileDataDirty = true;
-    if (_profileModalOpen && profileModal && profileModal.classList.contains('open')) {
-      if (_realtimeUpdateTimeout) clearTimeout(_realtimeUpdateTimeout);
-      _realtimeUpdateTimeout = setTimeout(() => {
-        if (!_profileModalOpen) return;
-        if (statsTabContent && statsTabContent.style.display !== 'none') {
-          renderMusicoStats();
-          _statsDataDirty = false;
-        } else {
-          renderProfileTab();
-          _profileDataDirty = false;
-        }
-      }, 500);
-    }
-  };
+                try {
+                  localStorage.setItem('musico_profile_image', dataUrl);
+                  localStorage.setItem('musico_profile_avatar', dataUrl);
+                } catch (_) { }
 
-  // ==========================================================================
-  // MASTER SONG FULL VIEW / IMMERSIVE PLAYER (PC VIEW ONLY)
-  // ==========================================================================
+                const navAvatar = document.querySelector('#profileBadge .profile-avatar-img');
+                if (navAvatar) navAvatar.src = dataUrl;
+                const homeAvatar = document.getElementById('homeProfileAvatarImg');
+                if (homeAvatar) homeAvatar.src = dataUrl;
+                const homeGreetingAvatar = document.getElementById('homeGreetingAvatarImg');
+                if (homeGreetingAvatar) homeGreetingAvatar.src = dataUrl;
+                if (profileModalAvatarImg) profileModalAvatarImg.src = dataUrl;
 
-  const songFullViewOverlay = document.getElementById('songFullViewOverlay');
-  const fullViewBgArtwork = document.getElementById('fullViewBgArtwork');
-  const fullViewOptionsBtn = document.getElementById('fullViewOptionsBtn');
-  const fullViewOptionsIcon = document.getElementById('fullViewOptionsIcon');
-  const fullViewExitBtn = document.getElementById('fullViewExitBtn');
-  const fullViewCenterControl = document.getElementById('fullViewCenterControl');
-  const fullViewCenterPlayPauseBtn = document.getElementById('fullViewCenterPlayPauseBtn');
-  const fullViewLyricColorToggle = document.getElementById('fullViewLyricColorToggle');
-  const fullViewLyricsContainer = document.getElementById('fullViewLyricsContainer');
-  const fullViewLyricsTextLines = document.getElementById('fullViewLyricsTextLines');
-  const fullViewBottomControls = document.getElementById('fullViewBottomControls');
-  const fullViewMiniPlayerCard = document.getElementById('fullViewMiniPlayerCard');
-  const fullViewMiniPrevBtn = document.getElementById('fullViewMiniPrevBtn');
-  const fullViewMiniPlayPauseBtn = document.getElementById('fullViewMiniPlayPauseBtn');
-  const fullViewMiniNextBtn = document.getElementById('fullViewMiniNextBtn');
-  const fullViewTimeDisplay = document.getElementById('fullViewTimeDisplay');
-  const fullViewProgressTrack = document.getElementById('fullViewProgressTrack');
-  const fullViewProgressFill = document.getElementById('fullViewProgressFill');
-  const fullViewProgressHandle = document.getElementById('fullViewProgressHandle');
-  const fullViewUpNextStrip = document.getElementById('fullViewUpNextStrip');
+                if (window.dataFolderService) {
+                  window.dataFolderService.isReconciled = true;
+                  window.dataFolderService.pendingReconciliation = false;
+                  if (!window.dataFolderService.originalAtuProfile) {
+                    window.dataFolderService.originalAtuProfile = {};
+                  }
+                  window.dataFolderService.originalAtuProfile.avatar = dataUrl;
+                }
+                if (typeof window.syncToAtu === 'function') {
+                  window.syncToAtu(true);
+                }
 
-  function isSongTrackPlayable(track) {
-    if (!track) return false;
-    if (track.isRecording) return false;
-    if (track.album === 'Recordings' || track.artist === 'Voice Recording') return false;
-    return true;
-  }
+                showToast('Profile image updated');
+              };
+              reader.readAsDataURL(file);
+            });
+          }
 
-  function openSongFullView() {
-    if (!player || !player.currentTrack || !isSongTrackPlayable(player.currentTrack)) {
-      return;
-    }
+          // Feedback Modal handlers
+          if (sendFeedbackBtn && feedbackModal) {
+            sendFeedbackBtn.addEventListener('click', () => {
+              if (feedbackTextarea) feedbackTextarea.value = '';
+              feedbackModal.classList.add('open');
+            });
+          }
+          if (closeFeedbackBtn && feedbackModal) {
+            closeFeedbackBtn.addEventListener('click', () => feedbackModal.classList.remove('open'));
+          }
+          if (cancelFeedbackBtn && feedbackModal) {
+            cancelFeedbackBtn.addEventListener('click', () => feedbackModal.classList.remove('open'));
+          }
+          if (feedbackModal) {
+            feedbackModal.addEventListener('click', (e) => {
+              if (e.target === feedbackModal) feedbackModal.classList.remove('open');
+            });
+          }
+          if (submitFeedbackBtn && feedbackModal) {
+            submitFeedbackBtn.addEventListener('click', async () => {
+              const text = feedbackTextarea ? feedbackTextarea.value.trim() : '';
+              if (!text) {
+                showToast('Please enter your feedback first');
+                return;
+              }
+              try {
+                const existing = JSON.parse(localStorage.getItem('musico_user_feedback') || '[]');
+                existing.push({ text, timestamp: Date.now() });
+                localStorage.setItem('musico_user_feedback', JSON.stringify(existing));
+              } catch (e) { }
 
-    isSongFullViewOpen = true;
-    lastFullViewLyricIndex = -1;
-    lastFullViewTrackId = player.currentTrack.id;
+              showToast('Thank you for your feedback!');
+              feedbackModal.classList.remove('open');
+            });
+          }
 
-    const overlay = songFullViewOverlay || document.getElementById('songFullViewOverlay');
-    if (overlay) {
-      overlay.style.display = 'flex';
-      requestAnimationFrame(() => {
-        overlay.classList.add('active');
-      });
-    }
+          // User Manual Modal handlers
+          if (userManualBtn && userManualModal) {
+            userManualBtn.addEventListener('click', () => userManualModal.classList.add('open'));
+          }
+          if (closeUserManualBtn && userManualModal) {
+            closeUserManualBtn.addEventListener('click', () => userManualModal.classList.remove('open'));
+          }
+          if (userManualModal) {
+            userManualModal.addEventListener('click', (e) => {
+              if (e.target === userManualModal) userManualModal.classList.remove('open');
+            });
+          }
+          const userManualWelcomeGuideBtn = document.getElementById('userManualWelcomeGuideBtn');
+          if (userManualWelcomeGuideBtn) {
+            userManualWelcomeGuideBtn.addEventListener('click', () => {
+              if (userManualModal) userManualModal.classList.remove('open');
+              if (window.onboardingWizard) {
+                window.onboardingWizard.openWelcome({ isManual: true });
+              }
+            });
+          }
 
-    // Background Artwork
-    updateFullViewArtwork(player.currentTrack);
+          // Render Profile Tab Details (O(1) from in-memory cache)
+          async function renderProfileTab() {
+            const fm = window.fileManager || window.appFileManager || fileManager;
+            if (!fm) return;
+            const stats = await fm.getPlaybackStats();
 
-    // Options icon theme check
-    if (fullViewOptionsIcon) {
-      fullViewOptionsIcon.src = currentTheme === 'dark' ? 'assets/OptionsThreeDots.svg' : 'assets/Dark Mode/DarkModeOptionsbtn.svg';
-    }
+            const totalSecs = Math.round(stats.totalListeningSeconds || 0);
+            const hours = Math.floor(totalSecs / 3600);
+            const mins = Math.floor((totalSecs % 3600) / 60);
+            const secs = totalSecs % 60;
+            let timeStr = '0 Minutes';
+            if (hours > 0) {
+              timeStr = mins > 0 ? `${hours} h ${mins} min` : `${hours} Hour${hours === 1 ? '' : 's'}`;
+            } else if (mins > 0) {
+              timeStr = `${mins} Minute${mins === 1 ? '' : 's'}`;
+            } else if (secs > 0) {
+              timeStr = `${secs} Seconds`;
+            }
 
-    // Lyric Color toggle
-    applyFullViewLyricColorMode();
+            const aboutYouListeningTime = document.getElementById('aboutYouListeningTime');
+            if (aboutYouListeningTime && aboutYouListeningTime.textContent !== timeStr) {
+              aboutYouListeningTime.textContent = timeStr;
+            }
 
-    // Play/pause states
-    updateFullViewPlayPauseUI(player.isPlaying);
+            // Recover songsPlayed count from tracks playCount if totalSongsPlayed is currently 0
+            let totalSongs = stats.totalSongsPlayed || 0;
+            if (totalSongs === 0 && allTracks && allTracks.length > 0) {
+              let sumPlays = 0;
+              allTracks.forEach(t => { if (t.playCount) sumPlays += t.playCount; });
+              if (sumPlays > 0) {
+                totalSongs = sumPlays;
+                stats.totalSongsPlayed = sumPlays;
+                fm.savePlaybackStats(stats);
+              }
+            }
 
-    // Mini Player Progress and Time
-    updateFullViewProgressUI();
+            const songsPlayedStr = totalSongs.toLocaleString();
+            const aboutYouSongsPlayed = document.getElementById('aboutYouSongsPlayed');
+            if (aboutYouSongsPlayed && aboutYouSongsPlayed.textContent !== songsPlayedStr) {
+              aboutYouSongsPlayed.textContent = songsPlayedStr;
+            }
+          }
 
-    // Up Next Thumbnails
-    renderFullViewUpNext();
+          // Render Musico Stats Tab Details (Optimized single-pass O(N) / O(1) calculations)
+          async function renderMusicoStats() {
+            const fm = window.fileManager || window.appFileManager || fileManager;
+            if (!fm) return;
+            const stats = await fm.getPlaybackStats();
 
-    // Show initial State A controls
-    showFullViewBottomControls(true);
+            // 1. Total Listening Time
+            const totalSecs = Math.round(stats.totalListeningSeconds || 0);
+            const hours = Math.floor(totalSecs / 3600);
+            const mins = Math.floor((totalSecs % 3600) / 60);
+            const secs = totalSecs % 60;
+            let timeStr = '0 Minutes';
+            if (hours > 0) {
+              timeStr = mins > 0 ? `${hours} h ${mins} min` : `${hours} Hour${hours === 1 ? '' : 's'}`;
+            } else if (mins > 0) {
+              timeStr = `${mins} Minute${mins === 1 ? '' : 's'}`;
+            } else if (secs > 0) {
+              timeStr = `${secs} Seconds`;
+            }
+            const statsTotalListeningTime = document.getElementById('statsTotalListeningTime');
+            if (statsTotalListeningTime && statsTotalListeningTime.textContent !== timeStr) {
+              statsTotalListeningTime.textContent = timeStr;
+            }
 
-    // Prepare lyrics
-    updateFullViewLyrics(true);
-  }
+            // 2. Songs Played (Recover from track playCounts if totalSongsPlayed is 0)
+            let totalSongs = stats.totalSongsPlayed || 0;
+            if (totalSongs === 0 && allTracks && allTracks.length > 0) {
+              let sumPlays = 0;
+              allTracks.forEach(t => { if (t.playCount) sumPlays += t.playCount; });
+              if (sumPlays > 0) {
+                totalSongs = sumPlays;
+                stats.totalSongsPlayed = sumPlays;
+                fm.savePlaybackStats(stats);
+              }
+            }
+            const songsPlayedStr = totalSongs.toLocaleString();
+            const statsTotalSongsPlayed = document.getElementById('statsTotalSongsPlayed');
+            if (statsTotalSongsPlayed && statsTotalSongsPlayed.textContent !== songsPlayedStr) {
+              statsTotalSongsPlayed.textContent = songsPlayedStr;
+            }
 
-  function closeSongFullView() {
-    isSongFullViewOpen = false;
-    if (fullViewAutoHideTimer) {
-      clearTimeout(fullViewAutoHideTimer);
-      fullViewAutoHideTimer = null;
-    }
+            // 3. Days Using Musico
+            const days = Math.max(1, Math.floor((Date.now() - (stats.firstLaunchDate || Date.now())) / (1000 * 60 * 60 * 24)));
+            const statsDaysUsing = document.getElementById('statsDaysUsing');
+            const daysText = `${days} Days`;
+            if (statsDaysUsing && statsDaysUsing.textContent !== daysText) {
+              statsDaysUsing.textContent = daysText;
+            }
 
-    if (songFullViewOverlay) {
-      songFullViewOverlay.classList.remove('active');
-      setTimeout(() => {
-        if (!isSongFullViewOpen) {
-          songFullViewOverlay.style.display = 'none';
-        }
-      }, 300);
-    }
-  }
+            // 4. Most Played Song (Single-pass lookup)
+            let mostPlayedTrack = null;
+            let maxPlays = 0;
+            let topTrackId = null;
+            const trackPlayCounts = stats.trackPlayCounts || {};
+            for (const id in trackPlayCounts) {
+              if (trackPlayCounts[id] > maxPlays) {
+                maxPlays = trackPlayCounts[id];
+                topTrackId = id;
+              }
+            }
 
-  function updateFullViewArtwork(track) {
-    if (!fullViewBgArtwork) return;
-    if (!track) {
-      fullViewBgArtwork.src = 'assets/atsuko.svg';
-      return;
-    }
-    const isFallback = !track.coverUrl || 
-                       track.coverUrl.includes('M logo') || 
-                       track.coverUrl.includes('Group 4') || 
-                       track.coverUrl.trim() === '';
-    fullViewBgArtwork.src = isFallback ? 'assets/atsuko.svg' : track.coverUrl;
-  }
+            if (topTrackId && allTracks && allTracks.length > 0) {
+              for (let i = 0; i < allTracks.length; i++) {
+                if (allTracks[i].id === topTrackId || allTracks[i].name === topTrackId) {
+                  mostPlayedTrack = allTracks[i];
+                  break;
+                }
+              }
+            }
 
-  function applyFullViewLyricColorMode() {
-    if (fullViewLyricColorToggle) {
-      fullViewLyricColorToggle.classList.toggle('is-dark', fullViewLyricColorMode === 'dark');
-    }
-    if (fullViewLyricsContainer) {
-      fullViewLyricsContainer.classList.toggle('lyrics-dark-theme', fullViewLyricColorMode === 'dark');
-    }
-  }
+            if (!mostPlayedTrack && allTracks && allTracks.length > 0) {
+              let fallbackMax = 0;
+              for (let i = 0; i < allTracks.length; i++) {
+                const pc = allTracks[i].playCount || 0;
+                if (pc > fallbackMax) {
+                  fallbackMax = pc;
+                  mostPlayedTrack = allTracks[i];
+                }
+              }
+            }
 
-  function toggleFullViewLyricColor() {
-    fullViewLyricColorMode = fullViewLyricColorMode === 'light' ? 'dark' : 'light';
-    try {
-      localStorage.setItem('musico-fullview-lyric-mode', fullViewLyricColorMode);
-    } catch (e) {}
-    applyFullViewLyricColorMode();
-  }
+            const statsMostPlayedTitle = document.getElementById('statsMostPlayedTitle');
+            const statsMostPlayedArtist = document.getElementById('statsMostPlayedArtist');
+            const statsMostPlayedThumb = document.getElementById('statsMostPlayedThumb');
+            if (mostPlayedTrack) {
+              const title = mostPlayedTrack.title || mostPlayedTrack.name || 'Untitled';
+              const artist = mostPlayedTrack.artist || 'Unknown Artist';
+              const cover = mostPlayedTrack.coverUrl || 'assets/atsuko.svg';
+              if (statsMostPlayedTitle && statsMostPlayedTitle.textContent !== title) statsMostPlayedTitle.textContent = title;
+              if (statsMostPlayedArtist && statsMostPlayedArtist.textContent !== artist) statsMostPlayedArtist.textContent = artist;
+              if (statsMostPlayedThumb && statsMostPlayedThumb.src !== cover) statsMostPlayedThumb.src = cover;
+            } else {
+              if (statsMostPlayedTitle && statsMostPlayedTitle.textContent !== 'No songs played yet') statsMostPlayedTitle.textContent = 'No songs played yet';
+              if (statsMostPlayedArtist && statsMostPlayedArtist.textContent !== '—') statsMostPlayedArtist.textContent = '—';
+              if (statsMostPlayedThumb && !statsMostPlayedThumb.src.includes('M%20logo.png')) statsMostPlayedThumb.src = 'assets/atsuko.svg';
+            }
 
-  function showFullViewBottomControls(autoHide = true) {
-    if (!isSongFullViewOpen) return;
-    if (fullViewBottomControls) {
-      fullViewBottomControls.classList.remove('controls-hidden');
-    }
-    isFullViewControlsVisible = true;
+            // 5. Favorite Artist (Single-pass lookup)
+            let topArtist = null;
+            let topArtistPlays = 0;
+            const artistPlayCounts = stats.artistPlayCounts || {};
+            for (const art in artistPlayCounts) {
+              if (artistPlayCounts[art] > topArtistPlays) {
+                topArtistPlays = artistPlayCounts[art];
+                topArtist = art;
+              }
+            }
 
-    // When bottom controls are visible, hide creative lyrics to prevent overlap
-    if (fullViewLyricsContainer) {
-      fullViewLyricsContainer.style.display = 'none';
-    }
+            if (!topArtist && allTracks && allTracks.length > 0) {
+              const artMap = Object.create(null);
+              let maxArtScore = 0;
+              for (let i = 0; i < allTracks.length; i++) {
+                const t = allTracks[i];
+                const a = (t.artist || '').trim();
+                if (a && a !== 'Unknown Artist' && a !== 'Unknown') {
+                  const score = (artMap[a] || 0) + (t.isFavorite ? 3 : 1) + (t.playCount || 0);
+                  artMap[a] = score;
+                  if (score > maxArtScore) {
+                    maxArtScore = score;
+                    topArtist = a;
+                  }
+                }
+              }
+            }
 
-    // Reset center control state
-    if (fullViewCenterControl) {
-      if (player && player.isPlaying) {
-        fullViewCenterControl.classList.add('hidden-center');
-      } else {
-        fullViewCenterControl.classList.remove('hidden-center');
-      }
-    }
+            const statsFavArtistTitle = document.getElementById('statsFavArtistTitle');
+            const statsFavArtistSub = document.getElementById('statsFavArtistSub');
+            const statsFavArtistThumb = document.getElementById('statsFavArtistThumb');
+            if (topArtist) {
+              if (statsFavArtistTitle && statsFavArtistTitle.textContent !== topArtist) {
+                statsFavArtistTitle.textContent = topArtist;
+              }
+              let artistSongCount = 0;
+              let coverUrl = null;
+              const lowerArt = topArtist.toLowerCase();
+              if (allTracks) {
+                for (let i = 0; i < allTracks.length; i++) {
+                  const t = allTracks[i];
+                  if ((t.artist || '').toLowerCase() === lowerArt) {
+                    artistSongCount++;
+                    if (!coverUrl && t.coverUrl && !t.coverUrl.includes('M logo')) {
+                      coverUrl = t.coverUrl;
+                    }
+                  }
+                }
+              }
+              const countStr = `${artistSongCount} song${artistSongCount === 1 ? '' : 's'}`;
+              if (statsFavArtistSub && statsFavArtistSub.textContent !== countStr) statsFavArtistSub.textContent = countStr;
+              const finalThumb = coverUrl || 'assets/atsuko.svg';
+              if (statsFavArtistThumb && statsFavArtistThumb.src !== finalThumb) statsFavArtistThumb.src = finalThumb;
+            } else {
+              if (statsFavArtistTitle && statsFavArtistTitle.textContent !== 'No artist data yet') statsFavArtistTitle.textContent = 'No artist data yet';
+              if (statsFavArtistSub && statsFavArtistSub.textContent !== '—') statsFavArtistSub.textContent = '—';
+              if (statsFavArtistThumb && !statsFavArtistThumb.src.includes('M%20logo.png')) statsFavArtistThumb.src = 'assets/atsuko.svg';
+            }
 
-    if (fullViewAutoHideTimer) {
-      clearTimeout(fullViewAutoHideTimer);
-      fullViewAutoHideTimer = null;
-    }
+            // 6. Favorite Album (Single-pass lookup)
+            let topAlbum = null;
+            let topAlbumPlays = 0;
+            const albumPlayCounts = stats.albumPlayCounts || {};
+            for (const alb in albumPlayCounts) {
+              if (albumPlayCounts[alb] > topAlbumPlays) {
+                topAlbumPlays = albumPlayCounts[alb];
+                topAlbum = alb;
+              }
+            }
 
-    if (autoHide && player && player.isPlaying) {
-      fullViewAutoHideTimer = setTimeout(() => {
-        hideFullViewBottomControls();
-      }, 2500);
-    }
-  }
+            if (!topAlbum && allTracks && allTracks.length > 0) {
+              const albMap = Object.create(null);
+              let maxAlbScore = 0;
+              for (let i = 0; i < allTracks.length; i++) {
+                const t = allTracks[i];
+                const a = (t.album || '').trim();
+                if (a && a !== 'Unknown Album' && a !== 'Unknown') {
+                  const score = (albMap[a] || 0) + (t.isFavorite ? 3 : 1) + (t.playCount || 0);
+                  albMap[a] = score;
+                  if (score > maxAlbScore) {
+                    maxAlbScore = score;
+                    topAlbum = a;
+                  }
+                }
+              }
+            }
 
-  function hideFullViewBottomControls() {
-    if (!isSongFullViewOpen) return;
-    if (fullViewBottomControls) {
-      fullViewBottomControls.classList.add('controls-hidden');
-    }
-    isFullViewControlsVisible = false;
+            const statsFavAlbumTitle = document.getElementById('statsFavAlbumTitle');
+            const statsFavAlbumSub = document.getElementById('statsFavAlbumSub');
+            const statsFavAlbumThumb = document.getElementById('statsFavAlbumThumb');
+            if (topAlbum) {
+              if (statsFavAlbumTitle && statsFavAlbumTitle.textContent !== topAlbum) {
+                statsFavAlbumTitle.textContent = topAlbum;
+              }
+              let albArtist = 'Various Artists';
+              let coverUrl = null;
+              const lowerAlb = topAlbum.toLowerCase();
+              if (allTracks) {
+                for (let i = 0; i < allTracks.length; i++) {
+                  const t = allTracks[i];
+                  if ((t.album || '').toLowerCase() === lowerAlb) {
+                    if (t.artist && albArtist === 'Various Artists') albArtist = t.artist;
+                    if (!coverUrl && t.coverUrl && !t.coverUrl.includes('M logo')) {
+                      coverUrl = t.coverUrl;
+                    }
+                  }
+                }
+              }
+              if (statsFavAlbumSub && statsFavAlbumSub.textContent !== albArtist) statsFavAlbumSub.textContent = albArtist;
+              const finalThumb = coverUrl || 'assets/atsuko-no-cover-image.svg';
+              if (statsFavAlbumThumb && statsFavAlbumThumb.src !== finalThumb) statsFavAlbumThumb.src = finalThumb;
+            } else {
+              if (statsFavAlbumTitle && statsFavAlbumTitle.textContent !== 'No album data yet') statsFavAlbumTitle.textContent = 'No album data yet';
+              if (statsFavAlbumSub && statsFavAlbumSub.textContent !== '—') statsFavAlbumSub.textContent = '—';
+              if (statsFavAlbumThumb && !statsFavAlbumThumb.src.includes('M%20logo%20for%20music%20items.png')) statsFavAlbumThumb.src = 'assets/atsuko-no-cover-image.svg';
+            }
 
-    if (player && player.isPlaying) {
-      // State B: Controls hidden, creative lyrics appear
-      if (fullViewCenterControl) {
-        fullViewCenterControl.classList.add('hidden-center');
-      }
-      if (fullViewLyricsContainer) {
-        fullViewLyricsContainer.style.display = 'flex';
-        updateFullViewLyrics(true);
-      }
-    } else {
-      // State C: Controls hidden & Paused -> Center play button visible, lyrics hidden
-      if (fullViewCenterControl) {
-        fullViewCenterControl.classList.remove('hidden-center');
-      }
-      if (fullViewLyricsContainer) {
-        fullViewLyricsContainer.style.display = 'none';
-      }
-    }
-  }
+            // 7. Favorite Genre (O(1))
+            let topGenre = null;
+            let topGenrePlays = 0;
+            const genrePlayCounts = stats.genrePlayCounts || {};
+            for (const gen in genrePlayCounts) {
+              if (genrePlayCounts[gen] > topGenrePlays) {
+                topGenrePlays = genrePlayCounts[gen];
+                topGenre = gen;
+              }
+            }
+            if (!topGenre) topGenre = 'Melancholic';
+            const statsFavGenre = document.getElementById('statsFavGenre');
+            if (statsFavGenre && statsFavGenre.textContent !== topGenre) statsFavGenre.textContent = topGenre;
 
-  function handleFullViewSpaceOrScreenClick() {
-    if (!isSongFullViewOpen || !player) return;
-    if (player.isPlaying) {
-      // Pause song
-      player.audio.pause();
-      // State C: hide creative lyrics, show center play button
-      if (fullViewLyricsContainer) fullViewLyricsContainer.style.display = 'none';
-      if (fullViewCenterControl) fullViewCenterControl.classList.remove('hidden-center');
-      updateFullViewPlayPauseUI(false);
-    } else {
-      // Resume song
-      player.audio.play().then(() => {
-        updateFullViewPlayPauseUI(true);
-        if (!isFullViewControlsVisible) {
-          if (fullViewLyricsContainer) {
-            fullViewLyricsContainer.style.display = 'flex';
+            // 8. Favorite Language (O(1))
+            let topLanguage = null;
+            let topLangPlays = 0;
+            const langPlayCounts = stats.languagePlayCounts || {};
+            for (const lang in langPlayCounts) {
+              if (langPlayCounts[lang] > topLangPlays) {
+                topLangPlays = langPlayCounts[lang];
+                topLanguage = lang;
+              }
+            }
+            if (!topLanguage) topLanguage = 'Offline Local';
+            const statsFavLanguage = document.getElementById('statsFavLanguage');
+            if (statsFavLanguage && statsFavLanguage.textContent !== topLanguage) statsFavLanguage.textContent = topLanguage;
+
+            // 9. Most Active Listening Time Period (O(1))
+            const dist = stats.timeDistribution || { morning: 0, afternoon: 0, evening: 0, night: 0 };
+            const totalDistSecs = (dist.morning || 0) + (dist.afternoon || 0) + (dist.evening || 0) + (dist.night || 0);
+
+            const periods = [
+              { name: 'Morning', sub: '(6 AM – 12 PM)', val: dist.morning || 0 },
+              { name: 'Afternoon', sub: '(12 PM – 6 PM)', val: dist.afternoon || 0 },
+              { name: 'Evening', sub: '(6 PM – 12 AM)', val: dist.evening || 0 },
+              { name: 'Night', sub: '(12 AM – 6 AM)', val: dist.night || 0 }
+            ];
+
+            periods.sort((a, b) => b.val - a.val);
+            const topPeriod = periods[0].val > 0 ? periods[0] : { name: 'Evening', sub: '(6 PM – 12 AM)' };
+
+            const statsMostActivePeriod = document.getElementById('statsMostActivePeriod');
+            const statsMostActivePeriodSub = document.getElementById('statsMostActivePeriodSub');
+            if (statsMostActivePeriod && statsMostActivePeriod.textContent !== topPeriod.name) statsMostActivePeriod.textContent = topPeriod.name;
+            if (statsMostActivePeriodSub && statsMostActivePeriodSub.textContent !== topPeriod.sub) statsMostActivePeriodSub.textContent = topPeriod.sub;
+
+            // 10. Listening Time Distribution Percentages (O(1))
+            let mPct = 0, aPct = 0, ePct = 0, nPct = 0;
+            if (totalDistSecs > 0) {
+              mPct = Math.round(((dist.morning || 0) / totalDistSecs) * 100);
+              aPct = Math.round(((dist.afternoon || 0) / totalDistSecs) * 100);
+              ePct = Math.round(((dist.evening || 0) / totalDistSecs) * 100);
+              nPct = Math.max(0, 100 - mPct - aPct - ePct);
+            }
+
+            const distMorningPct = document.getElementById('distMorningPct');
+            const distAfternoonPct = document.getElementById('distAfternoonPct');
+            const distEveningPct = document.getElementById('distEveningPct');
+            const distNightPct = document.getElementById('distNightPct');
+
+            const distMorningFill = document.getElementById('distMorningFill');
+            const distAfternoonFill = document.getElementById('distAfternoonFill');
+            const distEveningFill = document.getElementById('distEveningFill');
+            const distNightFill = document.getElementById('distNightFill');
+
+            const mStr = `${mPct}%`, aStr = `${aPct}%`, eStr = `${ePct}%`, nStr = `${nPct}%`;
+            if (distMorningPct && distMorningPct.textContent !== mStr) distMorningPct.textContent = mStr;
+            if (distAfternoonPct && distAfternoonPct.textContent !== aStr) distAfternoonPct.textContent = aStr;
+            if (distEveningPct && distEveningPct.textContent !== eStr) distEveningPct.textContent = eStr;
+            if (distNightPct && distNightPct.textContent !== nStr) distNightPct.textContent = nStr;
+
+            if (distMorningFill && distMorningFill.style.width !== mStr) distMorningFill.style.width = mStr;
+            if (distAfternoonFill && distAfternoonFill.style.width !== aStr) distAfternoonFill.style.width = aStr;
+            if (distEveningFill && distEveningFill.style.width !== eStr) distEveningFill.style.width = eStr;
+            if (distNightFill && distNightFill.style.width !== nStr) distNightFill.style.width = nStr;
+          }
+
+          // Real-time debounced updates when tracks change while modal is open
+          const origOnMusicoTrackChange = window.onMusicoTrackChange;
+          window.onMusicoTrackChange = function (track) {
+            if (typeof origOnMusicoTrackChange === 'function') {
+              origOnMusicoTrackChange(track);
+            }
+            _statsDataDirty = true;
+            _profileDataDirty = true;
+            if (_profileModalOpen && profileModal && profileModal.classList.contains('open')) {
+              if (_realtimeUpdateTimeout) clearTimeout(_realtimeUpdateTimeout);
+              _realtimeUpdateTimeout = setTimeout(() => {
+                if (!_profileModalOpen) return;
+                if (statsTabContent && statsTabContent.style.display !== 'none') {
+                  renderMusicoStats();
+                  _statsDataDirty = false;
+                } else {
+                  renderProfileTab();
+                  _profileDataDirty = false;
+                }
+              }, 500);
+            }
+          };
+
+          // ==========================================================================
+          // MASTER SONG FULL VIEW / IMMERSIVE PLAYER (PC VIEW ONLY)
+          // ==========================================================================
+
+          const songFullViewOverlay = document.getElementById('songFullViewOverlay');
+          const fullViewBgArtwork = document.getElementById('fullViewBgArtwork');
+          const fullViewOptionsBtn = document.getElementById('fullViewOptionsBtn');
+          const fullViewOptionsIcon = document.getElementById('fullViewOptionsIcon');
+          const fullViewExitBtn = document.getElementById('fullViewExitBtn');
+          const fullViewCenterControl = document.getElementById('fullViewCenterControl');
+          const fullViewCenterPlayPauseBtn = document.getElementById('fullViewCenterPlayPauseBtn');
+          const fullViewLyricColorToggle = document.getElementById('fullViewLyricColorToggle');
+          const fullViewLyricsContainer = document.getElementById('fullViewLyricsContainer');
+          const fullViewLyricsTextLines = document.getElementById('fullViewLyricsTextLines');
+          const fullViewBottomControls = document.getElementById('fullViewBottomControls');
+          const fullViewMiniPlayerCard = document.getElementById('fullViewMiniPlayerCard');
+          const fullViewMiniPrevBtn = document.getElementById('fullViewMiniPrevBtn');
+          const fullViewMiniPlayPauseBtn = document.getElementById('fullViewMiniPlayPauseBtn');
+          const fullViewMiniNextBtn = document.getElementById('fullViewMiniNextBtn');
+          const fullViewTimeDisplay = document.getElementById('fullViewTimeDisplay');
+          const fullViewProgressTrack = document.getElementById('fullViewProgressTrack');
+          const fullViewProgressFill = document.getElementById('fullViewProgressFill');
+          const fullViewProgressHandle = document.getElementById('fullViewProgressHandle');
+          const fullViewUpNextStrip = document.getElementById('fullViewUpNextStrip');
+
+          function isSongTrackPlayable(track) {
+            if (!track) return false;
+            if (track.isRecording) return false;
+            if (track.album === 'Recordings' || track.artist === 'Voice Recording') return false;
+            return true;
+          }
+
+          function openSongFullView() {
+            if (!player || !player.currentTrack || !isSongTrackPlayable(player.currentTrack)) {
+              return;
+            }
+
+            isSongFullViewOpen = true;
+            lastFullViewLyricIndex = -1;
+            lastFullViewTrackId = player.currentTrack.id;
+
+            const overlay = songFullViewOverlay || document.getElementById('songFullViewOverlay');
+            if (overlay) {
+              overlay.style.display = 'flex';
+              requestAnimationFrame(() => {
+                overlay.classList.add('active');
+              });
+            }
+
+            // Background Artwork
+            updateFullViewArtwork(player.currentTrack);
+
+            // Options icon theme check
+            if (fullViewOptionsIcon) {
+              fullViewOptionsIcon.src = currentTheme === 'dark' ? 'assets/OptionsThreeDots.svg' : 'assets/Dark Mode/DarkModeOptionsbtn.svg';
+            }
+
+            // Lyric Color toggle
+            applyFullViewLyricColorMode();
+
+            // Play/pause states
+            updateFullViewPlayPauseUI(player.isPlaying);
+
+            // Mini Player Progress and Time
+            updateFullViewProgressUI();
+
+            // Up Next Thumbnails
+            renderFullViewUpNext();
+
+            // Show initial State A controls
+            showFullViewBottomControls(true);
+
+            // Prepare lyrics
             updateFullViewLyrics(true);
           }
-          if (fullViewCenterControl) fullViewCenterControl.classList.add('hidden-center');
-        }
-      }).catch(() => {});
-    }
-  }
 
-  function renderFullViewUpNext() {
-    if (!fullViewUpNextStrip || !player) return;
-    const queue = player.queue || [];
-    const currentIndex = player.currentIndex >= 0 ? player.currentIndex : 0;
-    const upcoming = queue.slice(currentIndex + 1);
+          function closeSongFullView() {
+            isSongFullViewOpen = false;
+            if (fullViewAutoHideTimer) {
+              clearTimeout(fullViewAutoHideTimer);
+              fullViewAutoHideTimer = null;
+            }
 
-    if (upcoming.length === 0) {
-      fullViewUpNextStrip.innerHTML = '';
-      return;
-    }
+            if (songFullViewOverlay) {
+              songFullViewOverlay.classList.remove('active');
+              setTimeout(() => {
+                if (!isSongFullViewOpen) {
+                  songFullViewOverlay.style.display = 'none';
+                }
+              }, 300);
+            }
+          }
 
-    fullViewUpNextStrip.innerHTML = upcoming.map((track, idx) => {
-      const isFirst = idx === 0;
-      const cardClass = isFirst ? 'full-view-next-card-large' : 'full-view-next-card-small';
-      const isFallback = !track.coverUrl || 
-                         track.coverUrl.includes('M logo') || 
-                         track.coverUrl.includes('Group 4') || 
-                         track.coverUrl.trim() === '';
-      const imgSrc = isFallback ? 'assets/atsuko.svg' : track.coverUrl;
-      const targetIndex = currentIndex + 1 + idx;
+          function updateFullViewArtwork(track) {
+            if (!fullViewBgArtwork) return;
+            if (!track) {
+              fullViewBgArtwork.src = 'assets/atsuko.svg';
+              return;
+            }
+            const isFallback = !track.coverUrl ||
+              track.coverUrl.includes('M logo') ||
+              track.coverUrl.includes('Group 4') ||
+              track.coverUrl.trim() === '';
+            fullViewBgArtwork.src = isFallback ? 'assets/atsuko.svg' : track.coverUrl;
+          }
 
-      return `
+          function applyFullViewLyricColorMode() {
+            if (fullViewLyricColorToggle) {
+              fullViewLyricColorToggle.classList.toggle('is-dark', fullViewLyricColorMode === 'dark');
+            }
+            if (fullViewLyricsContainer) {
+              fullViewLyricsContainer.classList.toggle('lyrics-dark-theme', fullViewLyricColorMode === 'dark');
+            }
+          }
+
+          function toggleFullViewLyricColor() {
+            fullViewLyricColorMode = fullViewLyricColorMode === 'light' ? 'dark' : 'light';
+            try {
+              localStorage.setItem('musico-fullview-lyric-mode', fullViewLyricColorMode);
+            } catch (e) { }
+            applyFullViewLyricColorMode();
+          }
+
+          function showFullViewBottomControls(autoHide = true) {
+            if (!isSongFullViewOpen) return;
+            if (fullViewBottomControls) {
+              fullViewBottomControls.classList.remove('controls-hidden');
+            }
+            isFullViewControlsVisible = true;
+
+            // When bottom controls are visible, hide creative lyrics to prevent overlap
+            if (fullViewLyricsContainer) {
+              fullViewLyricsContainer.style.display = 'none';
+            }
+
+            // Reset center control state
+            if (fullViewCenterControl) {
+              if (player && player.isPlaying) {
+                fullViewCenterControl.classList.add('hidden-center');
+              } else {
+                fullViewCenterControl.classList.remove('hidden-center');
+              }
+            }
+
+            if (fullViewAutoHideTimer) {
+              clearTimeout(fullViewAutoHideTimer);
+              fullViewAutoHideTimer = null;
+            }
+
+            if (autoHide && player && player.isPlaying) {
+              fullViewAutoHideTimer = setTimeout(() => {
+                hideFullViewBottomControls();
+              }, 2500);
+            }
+          }
+
+          function hideFullViewBottomControls() {
+            if (!isSongFullViewOpen) return;
+            if (fullViewBottomControls) {
+              fullViewBottomControls.classList.add('controls-hidden');
+            }
+            isFullViewControlsVisible = false;
+
+            if (player && player.isPlaying) {
+              // State B: Controls hidden, creative lyrics appear
+              if (fullViewCenterControl) {
+                fullViewCenterControl.classList.add('hidden-center');
+              }
+              if (fullViewLyricsContainer) {
+                fullViewLyricsContainer.style.display = 'flex';
+                updateFullViewLyrics(true);
+              }
+            } else {
+              // State C: Controls hidden & Paused -> Center play button visible, lyrics hidden
+              if (fullViewCenterControl) {
+                fullViewCenterControl.classList.remove('hidden-center');
+              }
+              if (fullViewLyricsContainer) {
+                fullViewLyricsContainer.style.display = 'none';
+              }
+            }
+          }
+
+          function handleFullViewSpaceOrScreenClick() {
+            if (!isSongFullViewOpen || !player) return;
+            if (player.isPlaying) {
+              // Pause song
+              player.audio.pause();
+              // State C: hide creative lyrics, show center play button
+              if (fullViewLyricsContainer) fullViewLyricsContainer.style.display = 'none';
+              if (fullViewCenterControl) fullViewCenterControl.classList.remove('hidden-center');
+              updateFullViewPlayPauseUI(false);
+            } else {
+              // Resume song
+              player.audio.play().then(() => {
+                updateFullViewPlayPauseUI(true);
+                if (!isFullViewControlsVisible) {
+                  if (fullViewLyricsContainer) {
+                    fullViewLyricsContainer.style.display = 'flex';
+                    updateFullViewLyrics(true);
+                  }
+                  if (fullViewCenterControl) fullViewCenterControl.classList.add('hidden-center');
+                }
+              }).catch(() => { });
+            }
+          }
+
+          function renderFullViewUpNext() {
+            if (!fullViewUpNextStrip || !player) return;
+            const queue = player.queue || [];
+            const currentIndex = player.currentIndex >= 0 ? player.currentIndex : 0;
+            const upcoming = queue.slice(currentIndex + 1);
+
+            if (upcoming.length === 0) {
+              fullViewUpNextStrip.innerHTML = '';
+              return;
+            }
+
+            fullViewUpNextStrip.innerHTML = upcoming.map((track, idx) => {
+              const isFirst = idx === 0;
+              const cardClass = isFirst ? 'full-view-next-card-large' : 'full-view-next-card-small';
+              const isFallback = !track.coverUrl ||
+                track.coverUrl.includes('M logo') ||
+                track.coverUrl.includes('Group 4') ||
+                track.coverUrl.trim() === '';
+              const imgSrc = isFallback ? 'assets/atsuko.svg' : track.coverUrl;
+              const targetIndex = currentIndex + 1 + idx;
+
+              return `
         <div class="${cardClass}" data-track-index="${targetIndex}" title="${escapeHtml(track.title || 'Track')}">
           <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(track.title || 'Track')}" />
         </div>
       `;
-    }).join('');
-  }
-
-  function updateFullViewLyrics(forceUpdate = false) {
-    if (!isSongFullViewOpen) return;
-    if (!fullViewLyricsContainer || !fullViewLyricsTextLines) return;
-    if (!player || !player.isPlaying || isFullViewControlsVisible) {
-      return;
-    }
-
-    const currentTrack = player.currentTrack;
-    if (!currentTrack) {
-      fullViewLyricsContainer.style.display = 'none';
-      fullViewLyricsTextLines.innerHTML = '';
-      lastFullViewLyricIndex = -1;
-      lastFullViewTrackId = null;
-      return;
-    }
-
-    if (currentTrack.id !== lastFullViewTrackId) {
-      lastFullViewTrackId = currentTrack.id;
-      lastFullViewLyricIndex = -1;
-      fullViewLyricsTextLines.innerHTML = '';
-    }
-
-    const { isSynced, lines } = getTrackSynchronizedLyrics(currentTrack);
-    if (!isSynced || lines.length === 0) {
-      fullViewLyricsContainer.style.display = 'none';
-      fullViewLyricsTextLines.innerHTML = '';
-      lastFullViewLyricIndex = -1;
-      return;
-    }
-
-    const curTime = player.audio ? player.audio.currentTime : 0;
-    let activeIndex = -1;
-
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].time <= curTime + 0.2) {
-        activeIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    if (activeIndex === -1) {
-      if (lines[0].time - curTime < 2.5) {
-        activeIndex = 0;
-      } else {
-        fullViewLyricsContainer.style.display = 'flex';
-        fullViewLyricsTextLines.innerHTML = '';
-        lastFullViewLyricIndex = -1;
-        return;
-      }
-    }
-
-    if (activeIndex === lastFullViewLyricIndex && !forceUpdate) {
-      return;
-    }
-
-    lastFullViewLyricIndex = activeIndex;
-    fullViewLyricsContainer.style.display = 'flex';
-
-    const activeLine = lines[activeIndex];
-    const html = formatCreativeLyricLine(activeLine.text, true);
-
-    if (forceUpdate || fullViewLyricsTextLines.innerHTML.trim() === '') {
-      fullViewLyricsTextLines.innerHTML = html;
-      fullViewLyricsTextLines.classList.remove('transitioning-out');
-      fullViewLyricsTextLines.classList.add('transitioning-in');
-      requestAnimationFrame(() => {
-        fullViewLyricsTextLines.classList.remove('transitioning-in');
-      });
-      return;
-    }
-
-    fullViewLyricsTextLines.classList.add('transitioning-out');
-    setTimeout(() => {
-      if (lastFullViewLyricIndex === activeIndex) {
-        fullViewLyricsTextLines.innerHTML = html;
-        fullViewLyricsTextLines.classList.remove('transitioning-out');
-        fullViewLyricsTextLines.classList.add('transitioning-in');
-        requestAnimationFrame(() => {
-          fullViewLyricsTextLines.classList.remove('transitioning-in');
-        });
-      }
-    }, 160);
-  }
-
-  // Global hooks for player.js
-  window.updateFullViewPlayPauseUI = function(isPlaying) {
-    const playSvg = document.querySelector('.full-view-center-play-svg');
-    const pauseSvg = document.querySelector('.full-view-center-pause-svg');
-    if (playSvg) playSvg.style.display = isPlaying ? 'none' : 'block';
-    if (pauseSvg) pauseSvg.style.display = isPlaying ? 'block' : 'none';
-
-    const miniPlayIcon = document.querySelector('.full-view-mini-play-icon');
-    const miniPauseIcon = document.querySelector('.full-view-mini-pause-icon');
-    if (miniPlayIcon) miniPlayIcon.style.display = isPlaying ? 'none' : 'block';
-    if (miniPauseIcon) miniPauseIcon.style.display = isPlaying ? 'block' : 'none';
-
-    if (isSongFullViewOpen) {
-      if (!isPlaying) {
-        // Paused -> show center play button
-        if (fullViewCenterControl) fullViewCenterControl.classList.remove('hidden-center');
-        if (fullViewLyricsContainer) fullViewLyricsContainer.style.display = 'none';
-      } else {
-        if (!isFullViewControlsVisible) {
-          if (fullViewCenterControl) fullViewCenterControl.classList.add('hidden-center');
-          if (fullViewLyricsContainer) {
-            fullViewLyricsContainer.style.display = 'flex';
-            updateFullViewLyrics(true);
+            }).join('');
           }
-        }
-      }
-    }
-  };
 
-  window.updateFullViewProgressUI = function(progressPercent, formattedTime) {
-    if (!timeDisplayProgressPercent(progressPercent)) {
-      const curTime = player?.audio ? player.audio.currentTime : 0;
-      const dur = player?.audio ? (player.audio.duration || player.currentTrack?.duration || 0) : 0;
-      progressPercent = dur > 0 ? Math.min(100, Math.max(0, (curTime / dur) * 100)) : 0;
-      formattedTime = `${player?.formatTime ? player.formatTime(curTime) : '0:00'}/${player?.formatTime ? player.formatTime(dur) : '0:00'}`;
-    }
+          function updateFullViewLyrics(forceUpdate = false) {
+            if (!isSongFullViewOpen) return;
+            if (!fullViewLyricsContainer || !fullViewLyricsTextLines) return;
+            if (!player || !player.isPlaying || isFullViewControlsVisible) {
+              return;
+            }
 
-    if (fullViewTimeDisplay) {
-      fullViewTimeDisplay.textContent = formattedTime;
-    }
-    if (fullViewProgressFill) {
-      fullViewProgressFill.style.width = `${progressPercent}%`;
-    }
-    if (fullViewProgressHandle) {
-      fullViewProgressHandle.style.left = `${progressPercent}%`;
-    }
-  };
+            const currentTrack = player.currentTrack;
+            if (!currentTrack) {
+              fullViewLyricsContainer.style.display = 'none';
+              fullViewLyricsTextLines.innerHTML = '';
+              lastFullViewLyricIndex = -1;
+              lastFullViewTrackId = null;
+              return;
+            }
 
-  function timeDisplayProgressPercent(p) {
-    return typeof p === 'number' && !isNaN(p);
-  }
+            if (currentTrack.id !== lastFullViewTrackId) {
+              lastFullViewTrackId = currentTrack.id;
+              lastFullViewLyricIndex = -1;
+              fullViewLyricsTextLines.innerHTML = '';
+            }
 
-  window.updateFullViewNowPlayingUI = function(track) {
-    if (!isSongFullViewOpen) return;
-    if (!track || !isSongTrackPlayable(track)) {
-      closeSongFullView();
-      return;
-    }
-    updateFullViewArtwork(track);
-    renderFullViewUpNext();
-    updateFullViewLyrics(true);
-  };
+            const { isSynced, lines } = getTrackSynchronizedLyrics(currentTrack);
+            if (!isSynced || lines.length === 0) {
+              fullViewLyricsContainer.style.display = 'none';
+              fullViewLyricsTextLines.innerHTML = '';
+              lastFullViewLyricIndex = -1;
+              return;
+            }
 
-  window.updateFullViewLyrics = function() {
-    updateFullViewLyrics(false);
-  };
+            const curTime = player.audio ? player.audio.currentTime : 0;
+            let activeIndex = -1;
 
-  // Event Listeners for Song Full View
-  if (fullViewExitBtn) {
-    fullViewExitBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeSongFullView();
-    });
-  }
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].time <= curTime + 0.2) {
+                activeIndex = i;
+              } else {
+                break;
+              }
+            }
 
-  if (fullViewOptionsBtn) {
-    fullViewOptionsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (player && player.currentTrack) {
-        showContextMenu(e, player.currentTrack.id, false);
-      } else {
-        showToast('No song is currently playing');
-      }
-    });
-  }
+            if (activeIndex === -1) {
+              if (lines[0].time - curTime < 2.5) {
+                activeIndex = 0;
+              } else {
+                fullViewLyricsContainer.style.display = 'flex';
+                fullViewLyricsTextLines.innerHTML = '';
+                lastFullViewLyricIndex = -1;
+                return;
+              }
+            }
 
-  if (fullViewCenterPlayPauseBtn) {
-    fullViewCenterPlayPauseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleFullViewSpaceOrScreenClick();
-    });
-  }
+            if (activeIndex === lastFullViewLyricIndex && !forceUpdate) {
+              return;
+            }
 
-  if (fullViewLyricColorToggle) {
-    fullViewLyricColorToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleFullViewLyricColor();
-    });
-  }
+            lastFullViewLyricIndex = activeIndex;
+            fullViewLyricsContainer.style.display = 'flex';
 
-  if (fullViewMiniPrevBtn) {
-    fullViewMiniPrevBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.prev();
-    });
-  }
+            const activeLine = lines[activeIndex];
+            const html = formatCreativeLyricLine(activeLine.text, true);
 
-  if (fullViewMiniPlayPauseBtn) {
-    fullViewMiniPlayPauseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.togglePlay();
-    });
-  }
+            if (forceUpdate || fullViewLyricsTextLines.innerHTML.trim() === '') {
+              fullViewLyricsTextLines.innerHTML = html;
+              fullViewLyricsTextLines.classList.remove('transitioning-out');
+              fullViewLyricsTextLines.classList.add('transitioning-in');
+              requestAnimationFrame(() => {
+                fullViewLyricsTextLines.classList.remove('transitioning-in');
+              });
+              return;
+            }
 
-  if (fullViewMiniNextBtn) {
-    fullViewMiniNextBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      player.next();
-    });
-  }
+            fullViewLyricsTextLines.classList.add('transitioning-out');
+            setTimeout(() => {
+              if (lastFullViewLyricIndex === activeIndex) {
+                fullViewLyricsTextLines.innerHTML = html;
+                fullViewLyricsTextLines.classList.remove('transitioning-out');
+                fullViewLyricsTextLines.classList.add('transitioning-in');
+                requestAnimationFrame(() => {
+                  fullViewLyricsTextLines.classList.remove('transitioning-in');
+                });
+              }
+            }, 160);
+          }
 
-  if (fullViewProgressTrack) {
-    const handleSeek = (e) => {
-      const rect = fullViewProgressTrack.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const percent = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
-      player.seek(percent);
-    };
+          // Global hooks for player.js
+          window.updateFullViewPlayPauseUI = function (isPlaying) {
+            const playSvg = document.querySelector('.full-view-center-play-svg');
+            const pauseSvg = document.querySelector('.full-view-center-pause-svg');
+            if (playSvg) playSvg.style.display = isPlaying ? 'none' : 'block';
+            if (pauseSvg) pauseSvg.style.display = isPlaying ? 'block' : 'none';
 
-    fullViewProgressTrack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleSeek(e);
-    });
-  }
+            const miniPlayIcon = document.querySelector('.full-view-mini-play-icon');
+            const miniPauseIcon = document.querySelector('.full-view-mini-pause-icon');
+            if (miniPlayIcon) miniPlayIcon.style.display = isPlaying ? 'none' : 'block';
+            if (miniPauseIcon) miniPauseIcon.style.display = isPlaying ? 'block' : 'none';
 
-  if (fullViewUpNextStrip) {
-    fullViewUpNextStrip.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const card = e.target.closest('[data-track-index]');
-      if (!card) return;
-      const targetIdx = parseInt(card.dataset.trackIndex, 10);
-      if (!isNaN(targetIdx) && targetIdx >= 0 && targetIdx < (player.queue?.length || 0)) {
-        player.loadAndPlay(targetIdx);
-      }
-    });
-  }
+            if (isSongFullViewOpen) {
+              if (!isPlaying) {
+                // Paused -> show center play button
+                if (fullViewCenterControl) fullViewCenterControl.classList.remove('hidden-center');
+                if (fullViewLyricsContainer) fullViewLyricsContainer.style.display = 'none';
+              } else {
+                if (!isFullViewControlsVisible) {
+                  if (fullViewCenterControl) fullViewCenterControl.classList.add('hidden-center');
+                  if (fullViewLyricsContainer) {
+                    fullViewLyricsContainer.style.display = 'flex';
+                    updateFullViewLyrics(true);
+                  }
+                }
+              }
+            }
+          };
 
-  if (songFullViewOverlay) {
-    // Screen click toggles playback
-    songFullViewOverlay.addEventListener('click', (e) => {
-      if (
-        e.target.closest('.full-view-top-bar') ||
-        e.target.closest('.full-view-bottom-controls') ||
-        e.target.closest('.full-view-lyric-toggle-wrap') ||
-        e.target.closest('.full-view-center-control')
-      ) {
-        return;
-      }
-      handleFullViewSpaceOrScreenClick();
-    });
+          window.updateFullViewProgressUI = function (progressPercent, formattedTime) {
+            if (!timeDisplayProgressPercent(progressPercent)) {
+              const curTime = player?.audio ? player.audio.currentTime : 0;
+              const dur = player?.audio ? (player.audio.duration || player.currentTrack?.duration || 0) : 0;
+              progressPercent = dur > 0 ? Math.min(100, Math.max(0, (curTime / dur) * 100)) : 0;
+              formattedTime = `${player?.formatTime ? player.formatTime(curTime) : '0:00'}/${player?.formatTime ? player.formatTime(dur) : '0:00'}`;
+            }
 
-    // Mouse movement near bottom reveals controls; away starts auto-hide
-    songFullViewOverlay.addEventListener('mousemove', (e) => {
-      if (!isSongFullViewOpen) return;
-      const isNearBottom = e.clientY >= window.innerHeight - 150;
-      if (isNearBottom) {
-        if (fullViewAutoHideTimer) {
-          clearTimeout(fullViewAutoHideTimer);
-          fullViewAutoHideTimer = null;
-        }
-        showFullViewBottomControls(false);
-      } else {
-        if (isFullViewControlsVisible && !fullViewAutoHideTimer && player && player.isPlaying) {
-          fullViewAutoHideTimer = setTimeout(() => {
-            hideFullViewBottomControls();
-          }, 2500);
-        }
-      }
-    });
-  }
+            if (fullViewTimeDisplay) {
+              fullViewTimeDisplay.textContent = formattedTime;
+            }
+            if (fullViewProgressFill) {
+              fullViewProgressFill.style.width = `${progressPercent}%`;
+            }
+            if (fullViewProgressHandle) {
+              fullViewProgressHandle.style.left = `${progressPercent}%`;
+            }
+          };
 
-  window.isSongFullViewOpen = () => isSongFullViewOpen;
-  window.openSongFullView = openSongFullView;
-  window.closeSongFullView = closeSongFullView;
+          function timeDisplayProgressPercent(p) {
+            return typeof p === 'number' && !isNaN(p);
+          }
 
-  if ('BroadcastChannel' in window) {
-    try {
-      const instanceChannel = new BroadcastChannel('musico_single_instance_coordinator');
-      // Announce this launch event to any already-running instance
-      instanceChannel.postMessage({ type: 'MUSICO_PING', timestamp: Date.now() });
+          window.updateFullViewNowPlayingUI = function (track) {
+            if (!isSongFullViewOpen) return;
+            if (!track || !isSongTrackPlayable(track)) {
+              closeSongFullView();
+              return;
+            }
+            updateFullViewArtwork(track);
+            renderFullViewUpNext();
+            updateFullViewLyrics(true);
+          };
 
-      instanceChannel.onmessage = (event) => {
-        if (!event.data) return;
-        if (event.data.type === 'MUSICO_PING') {
-          // Existing active window receives ping -> Focus window to bring it to front
-          window.focus();
-          // Inform the new window that an active instance already exists
-          instanceChannel.postMessage({ type: 'MUSICO_ACTIVE_INSTANCE_EXISTS' });
-        } else if (event.data.type === 'MUSICO_ACTIVE_INSTANCE_EXISTS') {
-          // This duplicate window should close itself to enforce a single window
-          window.close();
-        }
-      };
-    } catch (e) {
-      console.warn('Single-instance coordinator initialization error:', e);
-    }
-  }
+          window.updateFullViewLyrics = function () {
+            updateFullViewLyrics(false);
+          };
 
-  // Register PWA Service Worker for Offline / Standalone Installation
-  if ('serviceWorker' in navigator && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
-    const registerServiceWorker = () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(err => {
-        console.warn('ServiceWorker registration error:', err);
-      });
-    };
+          // Event Listeners for Song Full View
+          if (fullViewExitBtn) {
+            fullViewExitBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              closeSongFullView();
+            });
+          }
 
-    if (document.readyState === 'complete') {
-      registerServiceWorker();
-    } else {
-      window.addEventListener('load', registerServiceWorker);
-    }
-  }
-});
+          if (fullViewOptionsBtn) {
+            fullViewOptionsBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (player && player.currentTrack) {
+                showContextMenu(e, player.currentTrack.id, false);
+              } else {
+                showToast('No song is currently playing');
+              }
+            });
+          }
+
+          if (fullViewCenterPlayPauseBtn) {
+            fullViewCenterPlayPauseBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              handleFullViewSpaceOrScreenClick();
+            });
+          }
+
+          if (fullViewLyricColorToggle) {
+            fullViewLyricColorToggle.addEventListener('click', (e) => {
+              e.stopPropagation();
+              toggleFullViewLyricColor();
+            });
+          }
+
+          if (fullViewMiniPrevBtn) {
+            fullViewMiniPrevBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              player.prev();
+            });
+          }
+
+          if (fullViewMiniPlayPauseBtn) {
+            fullViewMiniPlayPauseBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              player.togglePlay();
+            });
+          }
+
+          if (fullViewMiniNextBtn) {
+            fullViewMiniNextBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              player.next();
+            });
+          }
+
+          if (fullViewProgressTrack) {
+            const handleSeek = (e) => {
+              const rect = fullViewProgressTrack.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const percent = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+              player.seek(percent);
+            };
+
+            fullViewProgressTrack.addEventListener('click', (e) => {
+              e.stopPropagation();
+              handleSeek(e);
+            });
+          }
+
+          if (fullViewUpNextStrip) {
+            fullViewUpNextStrip.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const card = e.target.closest('[data-track-index]');
+              if (!card) return;
+              const targetIdx = parseInt(card.dataset.trackIndex, 10);
+              if (!isNaN(targetIdx) && targetIdx >= 0 && targetIdx < (player.queue?.length || 0)) {
+                player.loadAndPlay(targetIdx);
+              }
+            });
+          }
+
+          if (songFullViewOverlay) {
+            // Screen click toggles playback
+            songFullViewOverlay.addEventListener('click', (e) => {
+              if (
+                e.target.closest('.full-view-top-bar') ||
+                e.target.closest('.full-view-bottom-controls') ||
+                e.target.closest('.full-view-lyric-toggle-wrap') ||
+                e.target.closest('.full-view-center-control')
+              ) {
+                return;
+              }
+              handleFullViewSpaceOrScreenClick();
+            });
+
+            // Mouse movement near bottom reveals controls; away starts auto-hide
+            songFullViewOverlay.addEventListener('mousemove', (e) => {
+              if (!isSongFullViewOpen) return;
+              const isNearBottom = e.clientY >= window.innerHeight - 150;
+              if (isNearBottom) {
+                if (fullViewAutoHideTimer) {
+                  clearTimeout(fullViewAutoHideTimer);
+                  fullViewAutoHideTimer = null;
+                }
+                showFullViewBottomControls(false);
+              } else {
+                if (isFullViewControlsVisible && !fullViewAutoHideTimer && player && player.isPlaying) {
+                  fullViewAutoHideTimer = setTimeout(() => {
+                    hideFullViewBottomControls();
+                  }, 2500);
+                }
+              }
+            });
+          }
+
+          window.isSongFullViewOpen = () => isSongFullViewOpen;
+          window.openSongFullView = openSongFullView;
+          window.closeSongFullView = closeSongFullView;
+
+          if ('BroadcastChannel' in window) {
+            try {
+              const instanceChannel = new BroadcastChannel('musico_single_instance_coordinator');
+              // Announce this launch event to any already-running instance
+              instanceChannel.postMessage({ type: 'MUSICO_PING', timestamp: Date.now() });
+
+              instanceChannel.onmessage = (event) => {
+                if (!event.data) return;
+                if (event.data.type === 'MUSICO_PING') {
+                  // Existing active window receives ping -> Focus window to bring it to front
+                  window.focus();
+                  // Inform the new window that an active instance already exists
+                  instanceChannel.postMessage({ type: 'MUSICO_ACTIVE_INSTANCE_EXISTS' });
+                } else if (event.data.type === 'MUSICO_ACTIVE_INSTANCE_EXISTS') {
+                  // This duplicate window should close itself to enforce a single window
+                  window.close();
+                }
+              };
+            } catch (e) {
+              console.warn('Single-instance coordinator initialization error:', e);
+            }
+          }
+
+          // Data Folder Flush on tab hide / close (PRD Section 8.5)
+          window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && window.dataFolderService) {
+              window.dataFolderService.executeDiskSave();
+            }
+          });
+
+          window.addEventListener('pagehide', () => {
+            if (window.dataFolderService) {
+              window.dataFolderService.executeDiskSave();
+            }
+          });
+
+          // PWA Service Worker Safe Update Toast Listener (PRD Section 12)
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+              if (event.data && event.data.type === 'NEW_VERSION_AVAILABLE') {
+                const toast = document.getElementById('pwaUpdateToast');
+                if (toast) toast.style.display = 'flex';
+              }
+            });
+
+            const pwaUpdateBtn = document.getElementById('pwaUpdateBtn');
+            if (pwaUpdateBtn) {
+              pwaUpdateBtn.addEventListener('click', () => {
+                navigator.serviceWorker.getRegistration().then(reg => {
+                  if (reg && reg.waiting) {
+                    reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                  }
+                });
+                window.location.reload();
+              });
+            }
+          }
+
+          // Register PWA Service Worker for Offline / Standalone Installation
+          if ('serviceWorker' in navigator && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+            const registerServiceWorker = () => {
+              navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(err => {
+                console.warn('ServiceWorker registration error:', err);
+              });
+            };
+
+            if (document.readyState === 'complete') {
+              registerServiceWorker();
+            } else {
+              window.addEventListener('load', registerServiceWorker);
+            }
+          }
+        });

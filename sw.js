@@ -1,14 +1,18 @@
 /**
- * Atsuko - PWA Offline Service Worker (v125)
+ * Atsuko - PWA Offline Service Worker (v143)
+ * Pure offline app shell caching. Never caches user data.
  */
 
-const CACHE_NAME = 'atsuko-cache-v125';
+const CACHE_NAME = 'atsuko-cache-v143';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './diag.html',
+  './404.html',
   './manifest.json',
   './favicon.ico',
+  './robots.txt',
+  './sitemap.xml',
   './css/style.css',
   './js/app.js',
   './js/player.js',
@@ -16,6 +20,13 @@ const STATIC_ASSETS = [
   './js/id3Parser.js',
   './js/kwsEngine.js',
   './js/voiceAssistant.js',
+  './js/atuSchema.js',
+  './js/songFingerprint.js',
+  './js/dataFolderService.js',
+  './js/folderService.js',
+  './js/lame.min.js',
+  './js/recorderService.js',
+  './js/onboardingWizard.js',
   './assets/atsuko-wake-sample.mp3',
   './assets/atsuko-wake-sample2.mp3',
   './assets/atsuko.svg',
@@ -75,12 +86,13 @@ const STATIC_ASSETS = [
 
 // Install Event - Pre-cache core assets safely
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await Promise.allSettled(
         STATIC_ASSETS.map((url) => cache.add(url))
       );
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -97,6 +109,13 @@ self.addEventListener('activate', (e) => {
       );
     }).then(() => self.clients.claim())
   );
+});
+
+// Safe User-Prompted Skip Waiting
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Fetch Event - Stale-while-revalidate / Cache-first

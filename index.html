@@ -4,9 +4,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Atsuko — Offline Music Web App</title>
+  <title>Atsuko, Offline Music Player for Windows (MP3 Player PWA)</title>
   <meta name="description"
-    content="Atsuko is a premium offline local music web application with rich audio playback, metadata parsing, and equalizer visualization." />
+    content="Atsuko is a fast, beautiful offline music player for Windows. Reference your local MP3 files, organize with Folders and Playlists, and backup with a single .atu data file. No sign-up required." />
+  <link rel="canonical" href="https://theb-w.github.io/atsuko/" />
+  <meta name="robots" content="index, follow" />
+  <meta name="author" content="theb&amp;w" />
+  <meta name="keywords"
+    content="offline music player, mp3 player, windows pwa, music organizer, local audio player, atsuko, .atu file" />
+  <meta name="color-scheme" content="dark" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://theb-w.github.io/atsuko/" />
+  <meta property="og:title" content="Atsuko, Offline Music Player for Windows (MP3 Player PWA)" />
+  <meta property="og:description"
+    content="Fast, beautiful offline music player for Windows. Reference your local MP3 files, organize with Folders and Playlists, and backup with a single .atu data file." />
+  <meta property="og:image" content="https://theb-w.github.io/atsuko/assets/app%20icon%20main.png" />
+  <meta property="og:site_name" content="Atsuko" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://theb-w.github.io/atsuko/" />
+  <meta name="twitter:title" content="Atsuko, Offline Music Player for Windows (MP3 Player PWA)" />
+  <meta name="twitter:description"
+    content="Fast, beautiful offline music player for Windows. Reference your local MP3 files, organize with Folders and Playlists, and backup with a single .atu data file." />
+  <meta name="twitter:image" content="https://theb-w.github.io/atsuko/assets/app%20icon%20main.png" />
+
+  <!-- Structured Data JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Atsuko",
+    "operatingSystem": "Windows",
+    "applicationCategory": "MultimediaApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Fast, high-fidelity offline music player for Windows. Keep all playlists, folders, and statistics in your local .atu file without any account or cloud dependency."
+  }
+  </script>
 
   <!-- Fonts: Space Grotesk, Contrail One, Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,7 +57,7 @@
     rel="stylesheet" />
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="css/style.css?v=124" />
+  <link rel="stylesheet" href="css/style.css?v=142" />
 
   <!-- PWA Web App Manifest & Meta -->
   <link rel="manifest" href="manifest.json" />
@@ -711,7 +752,8 @@
       <header class="library-header">
         <h1 class="library-heading">Songs</h1>
         <div class="library-actions">
-          <button class="circle-action-btn" id="voiceAssistantBtn" title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
+          <button class="circle-action-btn" id="voiceAssistantBtn"
+            title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
             aria-label="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -1191,7 +1233,8 @@
           </div>
         </div>
         <div class="home-header-right">
-          <button class="circle-action-btn" id="homeVoiceAssistantBtn" title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
+          <button class="circle-action-btn" id="homeVoiceAssistantBtn"
+            title="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')"
             aria-label="Voice Assistant ('Night', 'Hey Night', 'NX', 'Nox', 'Arden')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -1449,6 +1492,19 @@
       </div>
 
       <div class="settings-group">
+        <span class="settings-group-label">Atsuko Data Folder</span>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+          <span id="settingsDataFolderStatus" style="font-size: 13px; color: #8E8E93;">Status: Checking...</span>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button class="welcome-btn-secondary" id="settingsChangeDataFolderBtn"
+            style="padding: 8px 14px; font-size: 13px;">📁 Change Folder</button>
+          <button class="welcome-btn-secondary" id="settingsViewAtuDataBtn"
+            style="padding: 8px 14px; font-size: 13px;">📄 View Atsuko Data</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <span class="settings-group-label">Library Management</span>
         <button class="danger-btn" id="clearLibrarySettingsBtn">Clear Local Library</button>
       </div>
@@ -1456,7 +1512,8 @@
       <div class="settings-group">
         <div class="settings-toggle-row" style="display: flex; align-items: center; justify-content: space-between;">
           <div>
-            <span class="settings-group-label" style="margin-bottom: 2px;">Voice Assistant ('NX' / 'Night' / 'Nox' / 'Arden')</span>
+            <span class="settings-group-label" style="margin-bottom: 2px;">Voice Assistant ('NX' / 'Night' / 'Nox' /
+              'Arden')</span>
             <p style="font-size: 12px; color: #8E8E93; margin: 0;">100% Offline Wake-word & Voice Commands</p>
           </div>
           <label class="switch-toggle" for="settingsVoiceToggle">
@@ -1980,7 +2037,10 @@
       <div class="manual-content-scroll">
         <div class="manual-section">
           <h4>🌙 Night Voice Assistant</h4>
-          <p>Say <strong>"Night"</strong> or <strong>"Hey Night"</strong> to control your music hands-free (e.g. <em>"Play [Song]"</em>, <em>"Pause"</em>, <em>"Next"</em>). It works online for now, but I'm actively working to make it truly offline too!</p>
+          <p>Say <strong>"Night"</strong> or <strong>"Hey Night"</strong> to control your music hands-free (e.g.
+            <em>"Play [Song]"</em>, <em>"Pause"</em>, <em>"Next"</em>). It works online for now, but I'm actively
+            working to make it truly offline too!
+          </p>
         </div>
         <div class="manual-section">
           <h4>🎵 Offline Library</h4>
@@ -2002,6 +2062,14 @@
           </p>
         </div>
         <div class="manual-section">
+          <h4>📁 Data Folder & Backup (.atu)</h4>
+          <p>All your playlists, favourites, folders, and statistics are stored in a single <code>atsuko.atu</code> file
+            inside your Data Folder. Copy that folder to any new device to restore your entire setup instantly.</p>
+          <button class="welcome-btn-secondary" id="userManualWelcomeGuideBtn" style="margin-top: 10px; width: 100%;">
+            Launch Welcome Guide
+          </button>
+        </div>
+        <div class="manual-section">
           <h4>🎙️ Voice Recorder</h4>
           <p>Record notes and live audio in the Library &rarr; Recorder section. Files can be stored directly on your PC
             disk.</p>
@@ -2019,6 +2087,9 @@
   <div class="context-menu" id="songContextMenu" role="menu">
     <button class="context-item" data-action="select" role="menuitem">Select</button>
     <button class="context-item" data-action="add-to-playlist" role="menuitem">Add to Playlist</button>
+    <button class="context-item" data-action="move-to-folder" role="menuitem">Move to Folder</button>
+    <button class="context-item" data-action="remove-from-folder" id="contextRemoveFromFolderBtn" role="menuitem"
+      style="display: none;">Remove from Folder</button>
     <button class="context-item" data-action="play-next" role="menuitem">Play Next</button>
     <button class="context-item" data-action="info" role="menuitem">Track Info</button>
     <button class="context-item delete" data-action="delete" role="menuitem">Remove from Library</button>
@@ -2048,6 +2119,8 @@
   <!-- Three-Dot Folder Item Context Menu -->
   <div class="context-menu" id="folderContextMenu" role="menu">
     <button class="context-item" data-action="play-folder" role="menuitem">Play Folder</button>
+    <button class="context-item" data-action="rename-folder" role="menuitem">Rename Folder</button>
+    <button class="context-item" data-action="add-songs-folder" role="menuitem">Add Songs to Folder</button>
     <button class="context-item delete" data-action="delete-folder" role="menuitem">Delete Folder</button>
   </div>
 
@@ -2265,7 +2338,8 @@
           <div class="voice-setup-feature-item">
             <span class="feature-bullet">•</span>
             <div><strong>Wake Words:</strong> Say <em>"NX"</em>, <em>"Night"</em>, <em>"Nox"</em>, or
-              <em>"Arden"</em> (or with <em>"Hey"</em> / <em>"Ok"</em>).</div>
+              <em>"Arden"</em> (or with <em>"Hey"</em> / <em>"Ok"</em>).
+            </div>
           </div>
           <div class="voice-setup-feature-item">
             <span class="feature-bullet">•</span>
@@ -2285,12 +2359,361 @@
     </div>
   </div>
 
-  <script src="js/id3Parser.js?v=122"></script>
-  <script src="js/fileManager.js?v=122"></script>
-  <script src="js/player.js?v=122"></script>
-  <script src="js/app.js?v=122"></script>
-  <script src="js/kwsEngine.js?v=122"></script>
-  <script src="js/voiceAssistant.js?v=122"></script>
+  <!-- Non-blocking Reconnect Banner (PRD Section 8.5 & 10) -->
+  <div class="data-folder-banner" id="dataFolderReconnectBanner" style="display: none;">
+    <div class="data-folder-banner-content">
+      <span class="data-folder-banner-icon">📁</span>
+      <span class="data-folder-banner-text" id="dataFolderBannerText">Data Folder disconnected. Reconnect to keep
+        playlists and stats saved.</span>
+    </div>
+    <button class="data-folder-banner-btn" id="dataFolderReconnectBtn">Reconnect Folder</button>
+  </div>
+
+  <!-- Atsuko Welcome Guide Modal (PRD Section 5.1) -->
+  <div class="modal-overlay" id="atsukoWelcomeModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card welcome-card">
+      <div class="settings-header">
+        <div class="welcome-header-logo">
+          <img src="assets/atsuko.svg" alt="Atsuko" style="width: 28px; height: 28px;" />
+          <h2 class="settings-title" style="margin-left: 10px;">Welcome to Atsuko</h2>
+        </div>
+        <button class="close-modal-btn" id="closeWelcomeBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="welcome-body">
+        <!-- Slide 1: Offline Freedom -->
+        <div class="welcome-slide" id="welcomeSlide1">
+          <div class="welcome-slide-graphic">🎵</div>
+          <h3 class="welcome-slide-heading">True Offline Music</h3>
+          <p class="welcome-slide-desc">Atsuko plays your local music directly from your computer. No accounts, no
+            subscriptions, and your music files never leave your device.</p>
+        </div>
+        <!-- Slide 2: Data Folder & .atu -->
+        <div class="welcome-slide" id="welcomeSlide2" style="display: none;">
+          <div class="welcome-slide-graphic">📁</div>
+          <h3 class="welcome-slide-heading">One Folder for Everything</h3>
+          <p class="welcome-slide-desc">Atsuko keeps your playlists, favourites, folders, profile, and stats in a single
+            file called <strong>atsuko.atu</strong> inside a Data Folder you choose. Pick or create any folder (we
+            recommend "Atsuko Data"):</p>
+          <div style="margin-top: 14px; text-align: center;">
+            <button class="welcome-btn-primary" id="welcomePickDataFolderBtn"
+              style="padding: 10px 20px; font-size: 13px;">📁 Choose Data Folder</button>
+            <div id="welcomeDataFolderStatus" style="margin-top: 8px; font-size: 13px; color: #8E8E93;">Not chosen yet
+            </div>
+          </div>
+        </div>
+        <!-- Slide 3: Add Songs -->
+        <div class="welcome-slide" id="welcomeSlide3" style="display: none;">
+          <div class="welcome-slide-graphic">🎵</div>
+          <h3 class="welcome-slide-heading">Add Your Music</h3>
+          <p class="welcome-slide-desc">Add individual audio files or an entire folder of music from your computer. Your
+            files stay exactly where they are:</p>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+              <button class="welcome-btn-primary" id="welcomePickAudioFilesBtn"
+                style="padding: 10px 16px; font-size: 13px;">🎵 Add Audio Files</button>
+              <button class="welcome-btn-secondary" id="welcomePickMusicFolderBtn"
+                style="padding: 10px 16px; font-size: 13px;">📁 Add Music Folder</button>
+            </div>
+            <div id="welcomeAddMusicStatus" style="margin-top: 4px; font-size: 13px; color: #8E8E93;">0 songs in library
+            </div>
+          </div>
+        </div>
+        <!-- Slide 4: In-App Folders -->
+        <div class="welcome-slide" id="welcomeSlide4" style="display: none;">
+          <div class="welcome-slide-graphic">✨</div>
+          <h3 class="welcome-slide-heading">You're All Set!</h3>
+          <p class="welcome-slide-desc">Enjoy your music! Atsuko works 100% offline from now on. You can organize songs
+            into Atsuko Folders anytime from Library &rarr; Folders.</p>
+        </div>
+
+        <!-- Step Dots Indicator -->
+        <div class="welcome-dots">
+          <span class="welcome-dot active" id="welcomeDot1"></span>
+          <span class="welcome-dot" id="welcomeDot2"></span>
+          <span class="welcome-dot" id="welcomeDot3"></span>
+          <span class="welcome-dot" id="welcomeDot4"></span>
+        </div>
+
+        <div class="welcome-actions">
+          <button class="welcome-btn-secondary" id="welcomeBackBtn" style="visibility: hidden;">Back</button>
+          <div style="display: flex; gap: 10px;">
+            <button class="welcome-btn-text" id="welcomeSkipBtn">Skip</button>
+            <button class="welcome-btn-primary" id="welcomeNextBtn">Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browser Unsupported Notification Modal (PRD Section 3) -->
+  <div class="modal-overlay" id="browserUnsupportedModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 420px; text-align: center;">
+      <div style="font-size: 38px; margin-bottom: 14px;">🌐</div>
+      <h2 class="settings-title" style="margin-bottom: 12px;">Browser Compatibility Notice</h2>
+      <p style="color: #A1A1A6; line-height: 1.5; font-size: 14px; margin-bottom: 24px;">
+        Atsuko needs <strong>Chrome</strong> or <strong>Edge</strong> on desktop (or as an installed PWA) to access your
+        local music and data folder safely.
+      </p>
+      <button class="welcome-btn-primary" id="browserUnsupportedDismissBtn" style="width: 100%;">
+        Understand &amp; Continue
+      </button>
+    </div>
+  </div>
+
+  <!-- Not Empty Data Folder Warning (PRD Section 5.2) -->
+  <div class="modal-overlay" id="folderWarningModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 440px;">
+      <div class="settings-header">
+        <h2 class="settings-title">Data Folder Notice</h2>
+      </div>
+      <p style="color: #D1D1D6; line-height: 1.5; font-size: 14px; margin-bottom: 16px;">
+        This folder already has <strong id="folderWarningFileCount">other</strong> items. Atsuko works best with a
+        dedicated empty folder for storing its <code>atsuko.atu</code> file.
+      </p>
+      <p style="color: #8E8E93; font-size: 12px; margin-bottom: 24px;">
+        Atsuko will never delete, move, or overwrite any of your existing files.
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="welcome-btn-secondary" id="folderWarningChooseOtherBtn">Choose Another Folder</button>
+        <button class="welcome-btn-primary" id="folderWarningUseAnywayBtn">Use It Anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Returning User Restore Modal (PRD Section 5.4) -->
+  <div class="modal-overlay" id="restoreWelcomeModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 460px; text-align: center;">
+      <div style="font-size: 40px; margin-bottom: 10px;">✨</div>
+      <h2 class="settings-title" style="margin-bottom: 10px;">Welcome Back, <span id="restoreUsernameSpan">User</span>!
+      </h2>
+      <p style="color: #A1A1A6; line-height: 1.5; font-size: 14px; margin-bottom: 24px;">
+        Your profile, playlists, favourites, folders, and statistics were restored from your <strong>atsuko.atu</strong>
+        file. Select your music files or folder now to reconnect all your songs.
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="welcome-btn-primary" id="restoreSelectSongsBtn" style="width: 100%;">Reconnect Songs Now</button>
+        <button class="welcome-btn-text" id="restoreSkipBtn" style="color: #8E8E93;">I'll Reconnect Later</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Library / Clear Atsuko Modal -->
+  <div class="modal-overlay" id="clearLibraryModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 480px;">
+      <div class="settings-header">
+        <h2 class="settings-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>⚠️</span> Manage Library / Clear
+        </h2>
+        <button class="modal-close-btn" id="clearLibraryCloseBtn" aria-label="Close modal">&times;</button>
+      </div>
+      <p style="color: #FF453A; font-weight: 600; font-size: 14px; margin-bottom: 10px; line-height: 1.5;">
+        Your data inside the locally stored <code>.atu</code> file will also get deleted!
+      </p>
+      <p style="color: #D1D1D6; line-height: 1.5; font-size: 13px; margin-bottom: 14px;">
+        Clearing the library will completely reset your <code>.atu</code> file (playlists, favourites, custom folders,
+        and stats) to start a brand new Atsuko. Please copy your <code>atsuko.atu</code> file somewhere else first if
+        you want to have a backup of your Atsuko.
+      </p>
+      <div
+        style="background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; border-left: 3px solid #30D158;">
+        <p style="color: #F2F2F7; font-size: 13px; margin: 0; line-height: 1.5;">
+          <strong>Don't worry &mdash; we won't delete your recordings!</strong><br />
+          They will stay right there in your <code>Recordings</code> folder inside your local data folder, and will
+          continue to show in Atsuko under Library &rarr; Recordings. You can delete them manually from your local
+          folder whenever you want.
+        </p>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="welcome-btn-secondary" id="clearLibraryCancelBtn">Cancel</button>
+        <button class="danger-btn" id="clearLibraryConfirmBtn" style="padding: 10px 18px;">Clear &amp; Reset Atsuko
+          (Enter)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add to Folder Dialog (PRD Section 5.3 & 6.2) -->
+  <div class="modal-overlay" id="addToFolderModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 440px;">
+      <div class="settings-header">
+        <h2 class="settings-title" style="font-size: 18px;">Which folder should these songs go in?</h2>
+        <button class="close-modal-btn" id="addToFolderCancelBtn" aria-label="Cancel">✕</button>
+      </div>
+      <p style="color: #A1A1A6; font-size: 13px; margin-bottom: 16px;">
+        Organize these <span id="addToFolderSongCount">songs</span> into an Atsuko Folder (e.g. date added or mood).
+      </p>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Folder Name</label>
+        <input type="text" id="addToFolderInput" class="atsuko-input" maxlength="40" placeholder="e.g. 15 Nov 2026"
+          style="width: 100%; box-sizing: border-box;" />
+      </div>
+      <div style="margin-bottom: 24px;">
+        <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Or add to an existing
+          folder:</label>
+        <select id="addToFolderExistingSelect" class="atsuko-select" style="width: 100%; box-sizing: border-box;">
+          <option value="">-- Or choose an existing folder --</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="welcome-btn-secondary" id="addToFolderCancelBtn2">Cancel</button>
+        <button class="welcome-btn-primary" id="addToFolderConfirmBtn">Add to Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Add Music Modal (PRD Section 5.3 & 6.2) -->
+  <div class="modal-overlay" id="addMusicModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 480px;">
+      <div class="settings-header">
+        <h2 class="settings-title" id="addMusicModalTitle">Add Music to Atsuko</h2>
+        <button class="close-modal-btn" id="closeAddMusicModalBtn" aria-label="Close">✕</button>
+      </div>
+
+      <!-- Step 0: If Data Folder is not connected yet -->
+      <div id="addMusicNeedsFolderStep" style="display: none;">
+        <p style="color: #D1D1D6; line-height: 1.5; font-size: 14px; margin-bottom: 16px;">
+          Atsuko needs a Data Folder on your computer to save your library index and organization safely offline.
+        </p>
+        <button class="welcome-btn-primary" id="addMusicPickDataFolderBtn" style="width: 100%; padding: 12px;">
+          📁 Choose Atsuko Data Folder
+        </button>
+      </div>
+
+      <!-- Step 1: Choose Files or Folder -->
+      <div id="addMusicOptionsStep">
+        <p style="color: #A1A1A6; font-size: 13px; margin-bottom: 16px;">
+          Choose how you want to add music to your library:
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+          <button class="welcome-btn-secondary" id="addMusicPickFilesBtn"
+            style="padding: 14px 18px; text-align: left; display: flex; align-items: center; gap: 14px; border-radius: 12px; cursor: pointer;">
+            <span style="font-size: 24px;">🎵</span>
+            <div>
+              <strong style="display: block; font-size: 14px; color: #FFFFFF;">Select Audio Files</strong>
+              <span style="font-size: 12px; color: #8E8E93;">Choose individual MP3, WAV, FLAC, M4A, or AAC songs</span>
+            </div>
+          </button>
+          <button class="welcome-btn-secondary" id="addMusicPickFolderBtn"
+            style="padding: 14px 18px; text-align: left; display: flex; align-items: center; gap: 14px; border-radius: 12px; cursor: pointer;">
+            <span style="font-size: 24px;">📁</span>
+            <div>
+              <strong style="display: block; font-size: 14px; color: #FFFFFF;">Select Music Folder</strong>
+              <span style="font-size: 12px; color: #8E8E93;">Scan an entire folder on your device for all audio tracks</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Which Atsuko Folder? -->
+      <div id="addMusicFolderAssignStep" style="display: none;">
+        <h3 style="font-size: 16px; margin-bottom: 8px; color: #fff;">Which folder should these songs go in?</h3>
+        <p style="color: #A1A1A6; font-size: 13px; margin-bottom: 16px;">
+          Organize <span id="addMusicCountSpan">0</span> selected songs into an Atsuko Folder:
+        </p>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Folder Name</label>
+          <input type="text" id="addMusicFolderNameInput" class="atsuko-input" maxlength="40"
+            style="width: 100%; box-sizing: border-box;" />
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Or choose an existing
+            folder:</label>
+          <select id="addMusicExistingFolderSelect" class="atsuko-select" style="width: 100%; box-sizing: border-box;">
+            <option value="">-- Choose an existing folder --</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button class="welcome-btn-secondary" id="addMusicCancelAssignBtn">Cancel</button>
+          <button class="welcome-btn-primary" id="addMusicConfirmAssignBtn">Add to Folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move Song to Folder Modal (PRD Section 6.2) -->
+  <div class="modal-overlay" id="moveToFolderModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card" style="max-width: 420px;">
+      <div class="settings-header">
+        <h2 class="settings-title" style="font-size: 18px;">Move to Folder</h2>
+        <button class="close-modal-btn" id="closeMoveToFolderModalBtn" aria-label="Close">✕</button>
+      </div>
+      <p style="color: #A1A1A6; font-size: 13px; margin-bottom: 16px;">
+        Move "<span id="moveToFolderSongTitle" style="color: #fff; font-weight: 500;">Song</span>" to:
+      </p>
+      <div style="margin-bottom: 14px;">
+        <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Select Folder</label>
+        <select id="moveToFolderSelect" class="atsuko-select" style="width: 100%; box-sizing: border-box;"></select>
+      </div>
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px;">Or create a new
+          folder:</label>
+        <input type="text" id="moveToFolderNewInput" class="atsuko-input" placeholder="e.g. Chill Beats" maxlength="40"
+          style="width: 100%; box-sizing: border-box;" />
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="welcome-btn-secondary" id="moveToFolderCancelBtn">Cancel</button>
+        <button class="welcome-btn-primary" id="moveToFolderConfirmBtn">Move Song</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Atsuko Data File Viewer Modal (v138) -->
+  <div class="modal-overlay" id="atuDataViewerModal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="settings-card atu-viewer-card" style="max-width: 640px; width: 92%; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="settings-header" style="flex-shrink: 0; padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h2 class="settings-title" style="font-size: 18px; margin: 0;">Atsuko File Data</h2>
+          <span class="atu-viewer-filename-badge" id="atuViewerFileName">main.atu</span>
+        </div>
+        <button class="close-modal-btn" id="closeAtuViewerModalBtn" aria-label="Close modal">✕</button>
+      </div>
+
+      <!-- Multi-file source picker if multiple .atu files were merged -->
+      <div id="atuViewerSourceSelectorRow" style="display: none; margin: 12px 0 6px 0; padding: 10px 14px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; font-size: 13px; align-items: center; justify-content: space-between; flex-shrink: 0;">
+        <span style="color: #8E8E93;">View Source File:</span>
+        <select id="atuViewerSourceSelect" class="atsuko-select" style="font-size: 12px; padding: 4px 10px; border-radius: 8px;"></select>
+      </div>
+
+      <!-- Scrollable content area -->
+      <div class="atu-viewer-content" id="atuViewerContent" style="overflow-y: auto; flex: 1; padding: 14px 4px 14px 0;">
+        <!-- Injected via openAtuDataViewerModal() in app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Service Worker Update Toast (PRD Section 12) -->
+  <div class="pwa-update-toast" id="pwaUpdateToast" style="display: none;">
+    <span>A new version of Atsuko is available.</span>
+    <button id="pwaUpdateBtn">Refresh</button>
+  </div>
+
+  <noscript>
+    <div style="padding: 24px; color: #fff; background: #0a0a0c;">
+      <h1>Atsuko - Offline Music Player for Windows</h1>
+      <h2>High-Fidelity Audio Playback Without The Cloud</h2>
+      <p>Atsuko is a standalone offline music web app (PWA) designed for desktop Windows. It plays your local MP3, WAV,
+        FLAC, and AAC files with zero cloud dependencies.</p>
+      <h2>Single .atu File Backup and Restore</h2>
+      <p>Your playlists, favorites, song statistics, and in-app folders are preserved in a single atsuko.atu file. Move
+        your Data Folder to another computer to restore everything instantly.</p>
+    </div>
+  </noscript>
+
+  <!-- Core Services & Dependencies -->
+  <script src="js/lame.min.js?v=143"></script>
+  <script src="js/atuSchema.js?v=143"></script>
+  <script src="js/songFingerprint.js?v=143"></script>
+  <script src="js/dataFolderService.js?v=143"></script>
+  <script src="js/folderService.js?v=143"></script>
+  <script src="js/recorderService.js?v=143"></script>
+  <script src="js/onboardingWizard.js?v=143"></script>
+
+  <!-- Existing Audio & Player Engine -->
+  <script src="js/id3Parser.js?v=143"></script>
+  <script src="js/fileManager.js?v=143"></script>
+  <script src="js/player.js?v=143"></script>
+  <script src="js/app.js?v=143"></script>
+  <script src="js/kwsEngine.js?v=143"></script>
+  <script src="js/voiceAssistant.js?v=143"></script>
 </body>
 
 </html>

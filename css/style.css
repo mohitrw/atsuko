@@ -452,8 +452,9 @@ body {
 }
 
 .filter-pill-btn#filterShuffleBtn {
-  flex: 1.45;
-  min-width: 0;
+  flex: 1.6;
+  min-width: 86px;
+  white-space: nowrap;
 }
 
 .filter-pill-btn:hover {
@@ -1313,6 +1314,10 @@ body {
 
 .modal-overlay.open {
   display: flex;
+}
+
+#clearLibraryModal {
+  z-index: 1200;
 }
 
 .settings-card {
@@ -7944,6 +7949,22 @@ body[data-theme="light"] .folders-fav-item:hover {
   box-sizing: border-box;
 }
 
+@media (max-width: 900px) {
+  .folders-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px 14px;
+    padding: 24px 12px 140px 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .folders-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px 8px 140px 8px;
+  }
+}
+
 .folder-card-item {
   display: flex;
   flex-direction: column;
@@ -11293,3 +11314,543 @@ body[data-theme="light"] .voice-setup-enable-btn:hover {
   padding-top: 6px;
 }
 
+
+/* ==========================================================================
+   Atsuko V1 - Onboarding, Folders, Data Folder & Recorder Styles
+   ========================================================================== */
+
+.welcome-card {
+  width: 90%;
+  max-width: 480px;
+  background: #161618;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 28px;
+  color: #FFFFFF;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+.welcome-header-logo {
+  display: flex;
+  align-items: center;
+}
+
+.welcome-slide {
+  text-align: center;
+  padding: 12px 0 16px 0;
+}
+
+.welcome-slide-graphic {
+  font-size: 46px;
+  margin-bottom: 14px;
+  line-height: 1;
+}
+
+.welcome-slide-heading {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #FFFFFF;
+}
+
+.welcome-slide-desc {
+  font-size: 14px;
+  color: #A1A1A6;
+  line-height: 1.5;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.welcome-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 16px 0;
+}
+
+.welcome-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.welcome-dot.active {
+  width: 24px;
+  background: #FFFFFF;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.welcome-btn-primary {
+  background: #FFFFFF;
+  color: #000000;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 22px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.welcome-btn-primary:hover {
+  transform: scale(1.02);
+  opacity: 0.95;
+}
+
+.welcome-btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.welcome-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.welcome-btn-text {
+  background: transparent;
+  color: #8E8E93;
+  border: none;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.welcome-btn-text:hover {
+  color: #FFFFFF;
+}
+
+/* Data Folder Disconnect/Reconnect Banner */
+.data-folder-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  background: rgba(28, 28, 30, 0.96);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  animation: slideDownBanner 0.25s ease-out;
+}
+
+@keyframes slideDownBanner {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.data-folder-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-folder-banner-icon {
+  font-size: 18px;
+}
+
+.data-folder-banner-text {
+  font-size: 13px;
+  color: #E5E5EA;
+}
+
+.data-folder-banner-btn {
+  background: #FFFFFF;
+  color: #000000;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.data-folder-banner-btn:hover {
+  opacity: 0.9;
+}
+
+/* Inputs & Form Elements */
+.atsuko-input,
+.atsuko-select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #FFFFFF;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.atsuko-input:focus,
+.atsuko-select:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.atsuko-select option {
+  background: #1C1C1E;
+  color: #FFFFFF;
+}
+
+/* PWA Update Toast */
+.pwa-update-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2000;
+  background: #1C1C1E;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 12px 18px;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  font-size: 13px;
+}
+
+.pwa-update-toast button {
+  background: #FFFFFF;
+  color: #000000;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Atsuko File Data Viewer Modal Styles (v138)
+   ========================================================================== */
+.atu-viewer-card {
+  background: #121214;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+}
+
+.atu-viewer-filename-badge {
+  background: rgba(52, 199, 89, 0.16);
+  color: #34C759;
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+}
+
+.atu-viewer-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.atu-viewer-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #8E8E93;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.atu-viewer-profile-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.atu-viewer-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.atu-viewer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.atu-viewer-username {
+  font-size: 16px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.atu-viewer-joined {
+  font-size: 12px;
+  color: #8E8E93;
+  margin-top: 2px;
+}
+
+.atu-viewer-tag {
+  background: rgba(255, 255, 255, 0.08);
+  color: #E5E5EA;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.atu-viewer-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .atu-viewer-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.atu-viewer-stat-box {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.atu-stat-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.atu-stat-lbl {
+  font-size: 11px;
+  color: #8E8E93;
+  margin-top: 4px;
+}
+
+.atu-reconcile-container {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.atu-reconcile-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.atu-btn-reconcile {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.atu-btn-reconcile:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.atu-btn-reconcile.primary {
+  background: #FFFFFF;
+  color: #000000;
+  font-weight: 600;
+  border: none;
+}
+
+.atu-btn-reconcile.primary:hover {
+  opacity: 0.9;
+}
+
+.atu-stats-confirmed {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34C759;
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  line-height: 1.4;
+}
+
+.atu-mini-list {
+  max-height: 110px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.atu-mini-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #FFFFFF;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.atu-count-pill {
+  font-size: 11px;
+  color: #8E8E93;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.atu-empty-sub {
+  font-size: 12px;
+  color: #636366;
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.atu-songs-scroll-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.atu-song-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: opacity 0.15s ease;
+}
+
+.atu-song-row.is-matched {
+  color: #FFFFFF;
+  opacity: 1;
+}
+
+.atu-song-row.is-missing {
+  color: #8E8E93;
+  opacity: 0.65;
+}
+
+.atu-match-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.atu-match-badge.matched {
+  background: rgba(52, 199, 89, 0.16);
+  color: #34C759;
+}
+
+.atu-match-badge.missing {
+  background: rgba(255, 159, 10, 0.16);
+  color: #FF9F0A;
+}
+
+.atu-song-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.atu-song-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.atu-song-artist {
+  font-size: 11px;
+  color: #8E8E93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* Light Theme Overrides */
+body[data-theme="light"] .atu-viewer-card {
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+}
+
+body[data-theme="light"] .atu-viewer-section,
+body[data-theme="light"] .atu-viewer-profile-card {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+body[data-theme="light"] .atu-viewer-username,
+body[data-theme="light"] .atu-stat-val,
+body[data-theme="light"] .atu-mini-item,
+body[data-theme="light"] .atu-song-row.is-matched {
+  color: #000000;
+}
+
+body[data-theme="light"] .atu-viewer-stat-box {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+body[data-theme="light"] .atu-btn-reconcile {
+  background: rgba(0, 0, 0, 0.05);
+  color: #000000;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+body[data-theme="light"] .atu-btn-reconcile.primary {
+  background: #000000;
+  color: #FFFFFF;
+}
+
+body[data-theme="light"] .atu-song-row {
+  background: rgba(0, 0, 0, 0.02);
+}

@@ -1,0 +1,139 @@
+================================================================================
+ATSUKO MUSIC PLAYER - UPCOMING FEATURE PLAN & ARCHITECTURAL OVERVIEW
+================================================================================
+Date: 16 November 2026
+Version Target: Atsuko v138
+Target: Folder Grid, .atu Data Viewer Modal, Stats Management & main.atu Merger
+
+--------------------------------------------------------------------------------
+1. THREE-COLUMN FOLDER GRID VIEW (RIGHT PANE)
+--------------------------------------------------------------------------------
+* Current Behavior:
+  In the Folders view, in-app folders (e.g., "Recordings", "16 Nov 2026") are 
+  stacked vertically in a single column (one below the other).
+
+* What Will Be Added / Changed:
+  - We will fix the display styling in `renderFoldersGridView()` (`js/app.js`).
+  - Previously, JavaScript set `songsListContainer.style.display = 'flex'`, which 
+    overrode the CSS grid rule.
+  - We will ensure `songsListContainer` applies `display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px 20px;`.
+  - Folders will now line up horizontally 3 across:
+      [ Folder 1 ]   [ Folder 2 ]   [ Folder 3 ]
+      [ Folder 4 ]   [ Folder 5 ]   ...
+  - No functionality or folder click actions will be modified—only the visual 
+    layout to render seamlessly in 3 columns.
+
+--------------------------------------------------------------------------------
+2. "VIEW ATSUKO DATA" BUTTON & NEW POPUP MODAL (SETTINGS)
+--------------------------------------------------------------------------------
+* Location:
+  In Settings -> under "Atsuko Data Folder", directly to the right of the 
+  "📁 Change Folder" button.
+
+* Button Label:
+  "📄 View Atsuko Data" (or "View Atsuko File") styled as a secondary pill button.
+
+* Modal Popup UI:
+  Clicking the button opens `#atuDataViewerModal` designed with Atsuko's dark 
+  glassmorphism styling, clean typography, and a close button.
+
+* Modal Contents & Information Displayed:
+  The modal reads the active `.atu` file and displays every section clearly:
+  1. Profile Info:
+     - Username (e.g., "USER", "ugg")
+     - Joined date
+     - Profile avatar thumbnail
+  2. Listening Statistics:
+     - Total Listening Time (hours, minutes)
+     - Total Songs Played
+  3. Playlists Summary:
+     - List of all playlists recorded in `.atu` and their song count.
+  4. In-App Folders Summary:
+     - List of all folders and total songs assigned in `.atu`.
+  5. Favorites:
+     - Total favorited tracks recorded in `.atu`.
+  6. Songs Verification & Status List:
+     - Shows all MP3 metadata stored in `.atu`.
+     - REAL / CONNECTED SONGS:
+       If the MP3 file is currently active and playable in Atsuko, it appears 
+       with bright text and a green tick mark: [✓ Matched / Active].
+     - MISSING / NOT YET ADDED SONGS:
+       If the MP3 file has not yet been added to Atsuko, it appears with reduced 
+       opacity / dimmed text: [○ Missing in Library].
+     - This gives you complete transparency into what is saved in your `.atu` file 
+       and what songs are currently linked vs waiting for audio files.
+
+--------------------------------------------------------------------------------
+3. STATS & PROFILE RECONCILIATION CONTROLS (3 BUTTON OPTIONS)
+--------------------------------------------------------------------------------
+* Scenario:
+  When you connect or view an `.atu` file that contains stats/profile data while you 
+  already have active stats/profile in Atsuko, the popup provides 3 clear buttons:
+
+  Option 1: "Keep Current Stats"
+  - Action: Retains your currently active listening time, songs played count, 
+    username, and profile picture in Atsuko. It ignores the stats from the `.atu` file.
+
+  Option 2: "Keep Old Stats"
+  - Action: Replaces your current in-app stats, username, and profile picture with 
+    the stats, username, and profile picture from the `.atu` file.
+
+  Option 3: "Merge Stats"
+  - Action: Adds the listening time and song play counts together (Current Stats + Old Stats).
+  - Sub-dialog: Prompts you to pick which profile identity you prefer:
+      [ Use Current Username & Avatar ]  OR  [ Use Old Username & Avatar ]
+
+* Safety & Confirmation:
+  - Clicking any option prompts a confirmation dialog stating that this action 
+    updates your profile and cannot be undone.
+  - Once confirmed, the buttons disappear and are replaced by a status checkmark 
+    (e.g., "✓ Using Selected Stats").
+  - The final stats are saved into the active `.atu` file and reflected immediately 
+    across the entire Atsuko interface (profile badge, stats tab, etc.).
+
+--------------------------------------------------------------------------------
+4. AUTOMATIC PLAYLIST MERGING WHEN CHANGING FOLDERS
+--------------------------------------------------------------------------------
+* Scenario:
+  You have 4 playlists in Atsuko, and in Settings you click "Change Folder" to 
+  connect a folder whose `.atu` file contains 6 different playlists.
+
+* What Happens:
+  - Atsuko will NOT erase or overwrite either set of playlists.
+  - Atsuko merges the current playlists with the incoming `.atu` playlists 
+    (deduplicating by ID and name).
+  - All playlists (e.g., 4 + 6 = 10) are saved into the newly connected `.atu` file.
+  - The `.atu` file in your new folder will always store the most up-to-date, 
+    combined library data.
+
+--------------------------------------------------------------------------------
+5. MULTI-.ATU DETECTION & AUTOMATIC "main.atu" CONSOLIDATION
+--------------------------------------------------------------------------------
+* Case A: Exactly One "main.atu" Exists in the Selected Folder
+  - Atsuko automatically recognizes and uses `main.atu` as the master data file.
+
+* Case B: Multiple ".atu" Files Exist (e.g., "atsuko.atu", "backup.atu", etc.)
+  - Atsuko inspects and reads all `.atu` files found inside the folder.
+  - It merges all playlists, favorite tracks, in-app folders, and song records into 
+    one unified dataset.
+  - It creates and writes this combined dataset into a single new file: `main.atu`.
+  - Notification displayed: 
+    "main.atu created! All your .atu files have been merged. Atsuko will now use 
+    main.atu as your primary data file. You can safely keep or delete older .atu files."
+  - From that moment onward, Atsuko operates exclusively on `main.atu`.
+
+* Case C: Multi-File Stats Choice in "View Atsuko Data" Popup
+  - When viewing data in a folder where multiple `.atu` files were merged, the popup 
+    lets you see the individual stats from each source file.
+  - You can choose to adopt the stats/profile from a specific `.atu` file or keep the 
+    merged combined totals.
+
+* Case D: Multiple "main.atu" Conflict Detection
+  - If a folder contains more than one `main.atu` file (such as naming collisions), 
+    Atsuko stops processing and displays a clear alert:
+    "Error: Multiple main.atu files found. Please ensure there is only one main.atu 
+    file in this folder."
+
+================================================================================
+END OF PLAN EXPLANATION
+================================================================================

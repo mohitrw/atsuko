@@ -1,0 +1,138 @@
+================================================================================
+ATSUKO - UNDERSTANDING OF YOUR IDEA & STEP-BY-STEP IMPLEMENTATION PLAN
+================================================================================
+
+1. OUR UNDERSTANDING OF YOUR IDEA
+--------------------------------------------------------------------------------
+When you open a brand new Atsuko (or clear the app) and have a backup folder 
+on your computer that contains your "atsuko.atu" file and your "Recordings" folder:
+
+You go to Settings -> click "Change Folder" -> and pick your backup folder.
+Atsuko detects your "atsuko.atu" file and shows the "Welcome Back" popup with:
+- "Reconnect Songs Now" (White button)
+- "I'll Reconnect Later" (Text button)
+
+Here is how each part must behave according to your instructions:
+
+
+A. SCENARIO 1: USER CLICKS "I'LL RECONNECT LATER"
+--------------------------------------------------------------------------------
+- CURRENT BUG:
+  Currently, if you click "I'll Reconnect Later", Atsuko shows all the old songs
+  in the All Songs list. But because they are just metadata from the .atu file
+  without the actual audio files attached, they cannot play when clicked.
+
+- WHAT IT MUST DO INSTEAD:
+  Do NOT show any unplayable fake songs in the song list!
+  Keep the songs list completely clean:
+  - Only show real recordings that are physically present inside the "Recordings" 
+    folder on your disk.
+  - If no recordings exist in the folder, the song list stays empty ("No Songs").
+  - The previous playlist and song metadata from the .atu file stays safely stored 
+    in memory in the background, waiting to be linked when you actually add your 
+    audio files.
+
+
+B. SCENARIO 2: USER CLICKS "RECONNECT SONGS NOW"
+--------------------------------------------------------------------------------
+- When you click "Reconnect Songs Now" in the Welcome popup:
+  It immediately opens the "Add Music to Atsuko" popup (the same popup you get 
+  when you click the "+" button in the top-left corner).
+- In this popup, you have two choices:
+  1. Pick single / multiple music files one by one.
+  2. Pick an entire music folder from your disk.
+
+
+C. REMOVE "RECONNECT SONGS" BUTTON FROM SETTINGS
+--------------------------------------------------------------------------------
+- In Settings, under "Atsuko Data Folder", the "Reconnect Songs" button will be 
+  completely deleted from both the HTML and the JavaScript.
+- Under "Atsuko Data Folder", only "Change Folder" will remain.
+- The "+" (Add Music) button on the main screen handles adding music and 
+  reconnecting songs at any time.
+
+
+D. HOW ADDING SONGS & RECONNECTING WORKS (VIA "+" BUTTON OR "RECONNECT SONGS NOW")
+--------------------------------------------------------------------------------
+Whenever you choose songs (whether one-by-one or an entire folder):
+
+1. Choose In-App Folder:
+   After selecting the audio files from your disk, Atsuko asks you to name an 
+   in-app folder (e.g. "16 Nov" or your own custom name) or choose an existing one.
+   Once you enter the name and confirm, the songs are assigned to that folder.
+
+2. Cross-Check with "atsuko.atu":
+   Atsuko checks every added audio file against the stored data in your .atu file 
+   (by file hash, file size, title, and ID3 tags):
+   - MATCHED SONGS:
+     If a song was previously in your .atu file, Atsuko recognizes it and 
+     automatically restores the playlists that contained that song, with the 
+     exact same playlist names and songs inside them. It also restores their 
+     favorite status, play counts, and listening stats.
+   - NEW SONGS:
+     If you add new MP3 files that were not in your .atu file before, Atsuko adds 
+     them normally into All Songs and into your newly chosen in-app folder without 
+     interfering with your playlists.
+   - PLAYABLE IMMEDIATELY:
+     All added songs are immediately loaded with their real audio files and can 
+     be played instantly.
+
+3. In-App Folders Structure:
+   - The newly created in-app folder holds the songs you just added.
+   - The "Recordings" folder automatically holds all your voice recordings.
+   - Any songs not assigned to a specific folder stay in "Unsorted".
+
+
+================================================================================
+2. STEP-BY-STEP IMPLEMENTATION PLAN
+================================================================================
+
+STEP 1: FIX THE "I'LL RECONNECT LATER" BEHAVIOR
+- In "js/app.js" (inside handleRestoreReturningUser and initDataFolder):
+  Remove the code that pushes missing placeholder tracks into "allTracks".
+  Keep "allTracks" empty of fake songs.
+  Only load the actual recordings found on disk in the "Recordings" folder.
+  Store the .atu song metadata in "window.dataFolderService.originalAtuSongs" 
+  in the background so it can be matched when files are added.
+
+STEP 2: LINK "RECONNECT SONGS NOW" TO THE ADD MUSIC MODAL
+- In "js/onboardingWizard.js":
+  When "Reconnect Songs Now" is clicked, close the Welcome modal and immediately 
+  call "openAddMusicModal()".
+  This shows the exact "Add Music to Atsuko" interface with the two options 
+  (pick music files or pick a folder).
+
+STEP 3: REMOVE "RECONNECT SONGS" FROM SETTINGS
+- In "index.html":
+  Delete the "<button id='settingsReconnectSongsBtn'>🔄 Reconnect Songs</button>" 
+  from the settings modal.
+- In "js/app.js":
+  Remove the click event listener and handler for "settingsReconnectSongsBtn".
+
+STEP 4: ENSURE IN-APP FOLDER PROMPT ALWAYS COMES FIRST WHEN IMPORTING
+- In "js/app.js" (inside handleSelectedAudioFiles):
+  When files are selected (whether single files or a folder), open the 
+  in-app folder name dialog ("Add Songs to Folder" with date suggestion).
+  When confirmed, pass the chosen folder to "executeImportSongs".
+
+STEP 5: CROSS-CHECK AND AUTO-RESTORE PLAYLISTS & FAVORITES
+- In "js/app.js" (inside executeImportSongs):
+  1. For each added file, match it against "originalAtuSongs" from the .atu file 
+     using the 256KB SHA-256 fingerprint, filename, size, and ID3 title.
+  2. If matched:
+     Link the real audio blob to the stored song, restore its favorite status, 
+     and assign it to the in-app folder.
+  3. Rebuild the playlists:
+     Check all playlists in .atu. For any playlist that had this song, update 
+     its track list to include this live song and save it.
+  4. If unmatched (new song):
+     Import it as a new track into All Songs and the selected in-app folder.
+  5. Sync the updated data immediately to the .atu file on disk.
+
+STEP 6: SERVICE WORKER & VERSION REFRESH
+- Bump cache version in "sw.js" and asset version in "index.html" so changes 
+  take effect cleanly upon reload.
+
+================================================================================
+END OF PLAN
+================================================================================

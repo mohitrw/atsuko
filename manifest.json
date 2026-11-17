@@ -1,15 +1,38 @@
 {
-  "name": "Atsuko - Offline Music App",
+  "name": "Atsuko, Offline Music Player for Windows (MP3 Player PWA)",
   "short_name": "Atsuko",
-  "description": "Modern high-fidelity offline music web app",
+  "description": "Fast, private offline music player for Windows. Reference your local MP3s, build playlists, organize with folders, and backup with a single .atu data file.",
   "id": "./index.html",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "orientation": "any",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
   "categories": ["music", "entertainment", "utilities"],
+  "shortcuts": [
+    {
+      "name": "All Songs",
+      "short_name": "Songs",
+      "description": "View your offline songs",
+      "url": "./index.html?view=all_songs",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Library",
+      "short_name": "Library",
+      "description": "Browse artists, albums, folders and playlists",
+      "url": "./index.html?view=explore",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Voice Recorder",
+      "short_name": "Recorder",
+      "description": "Record audio in MP3",
+      "url": "./index.html?view=recorder",
+      "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "icons": [
     {
       "src": "assets/icons/icon-512.png",

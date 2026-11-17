@@ -114,6 +114,9 @@ class MusicPlayer {
         const fm = window.fileManager || window.appFileManager;
         if (elapsed > 0.5 && this.currentTrack && fm) {
           fm.recordPlaybackSeconds(elapsed, this.currentTrack);
+          if (typeof window.syncToAtu === 'function') {
+            window.syncToAtu();
+          }
         }
         lastPlaybackTime = Date.now();
       }
@@ -128,6 +131,9 @@ class MusicPlayer {
         this.currentTrack.playCount = (this.currentTrack.playCount || 0) + 1;
         if (typeof fm.saveTrackToDB === 'function') {
           fm.saveTrackToDB(this.currentTrack);
+        }
+        if (typeof window.syncToAtu === 'function') {
+          window.syncToAtu();
         }
       }
       if (!this.isAudioCtxInitialized) {
@@ -168,7 +174,12 @@ class MusicPlayer {
       lastPlaybackTime = 0;
       if (this.repeatMode === 'one') {
         this.audio.currentTime = 0;
-        this.audio.play();
+        const playPromise = this.audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {
+            this.loadAndPlay(this.currentIndex);
+          });
+        }
       } else {
         this.next();
       }
@@ -201,11 +212,13 @@ class MusicPlayer {
       return;
     }
 
-    if (this.isShuffle) {
+    if (this.playbackMode === 'shuffle') {
+      this.isShuffle = true;
       this.queue = this.shuffleArray([...tracks]);
-      const currentInShuffled = this.queue.findIndex(t => t.id === tracks[startIndex].id);
+      const currentInShuffled = this.queue.findIndex(t => t.id === tracks[startIndex]?.id);
       this.currentIndex = currentInShuffled !== -1 ? currentInShuffled : 0;
     } else {
+      this.isShuffle = false;
       this.queue = [...tracks];
       this.currentIndex = startIndex;
     }
@@ -215,6 +228,8 @@ class MusicPlayer {
     } else if (this.queue.length > 0) {
       this.loadTrack(this.currentIndex);
     }
+
+    this.updatePlaybackModeUI();
 
     if (window.onMusicoQueueChange) {
       window.onMusicoQueueChange();
@@ -238,7 +253,16 @@ class MusicPlayer {
     }
 
     if (this.currentTrack) {
-      if (this.currentTrack.fileBlob) {
+      const hasValidBlob = this.currentTrack.fileBlob instanceof Blob;
+      if (this.currentTrack.isMissing || (!hasValidBlob && !this.currentTrack.audioUrl)) {
+        this.currentTrack.isMissing = true;
+        if (typeof window.showToast === 'function') {
+          window.showToast(`Missing audio file for "${this.currentTrack.title || 'song'}".`);
+        }
+        setTimeout(() => this.next(), 300);
+        return;
+      }
+      if (hasValidBlob) {
         this.activeAudioUrl = URL.createObjectURL(this.currentTrack.fileBlob);
         this.audio.src = this.activeAudioUrl;
       } else if (this.currentTrack.audioUrl) {
@@ -354,17 +378,31 @@ class MusicPlayer {
   }
 
   /**
+   * Explicit Stop: stops playback, resets position and cleans up UI
+   */
+  stop() {
+    if (this.audio) {
+      try {
+        this.audio.pause();
+      } catch (e) {}
+      this.audio.currentTime = 0;
+      this.audio.src = '';
+    }
+    this.isPlaying = false;
+    this.currentTrack = null;
+    this.updateNowPlayingUI();
+    this.updatePlayPauseUI();
+    this.updateProgressUI();
+  }
+
+  /**
    * Next Track
    */
   next() {
     if (this.queue.length === 0) return;
     let nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.queue.length) {
-      if (this.repeatMode === 'all') {
-        nextIndex = 0;
-      } else {
-        return;
-      }
+      nextIndex = 0;
     }
     this.loadAndPlay(nextIndex);
   }
@@ -513,41 +551,10 @@ class MusicPlayer {
   }
 
   /**
-   * Toggle Shuffle Mode
+   * Toggle Shuffle Mode (cycles 3 playback modes)
    */
   toggleShuffle() {
-    this.isShuffle = !this.isShuffle;
-    if (this.isShuffle) {
-      const currentTrackId = this.currentTrack ? this.currentTrack.id : null;
-      this.queue = this.shuffleArray([...this.originalQueue]);
-      if (currentTrackId) {
-        this.currentIndex = this.queue.findIndex(t => t.id === currentTrackId);
-      }
-    } else {
-      const currentTrackId = this.currentTrack ? this.currentTrack.id : null;
-      this.queue = [...this.originalQueue];
-      if (currentTrackId) {
-        this.currentIndex = this.queue.findIndex(t => t.id === currentTrackId);
-      }
-    }
-
-    const shuffleBtns = [
-      document.getElementById('filterShuffleBtn'),
-      document.getElementById('mobileFilterShuffleBtn'),
-      document.getElementById('mobileFullFilterShuffleBtn')
-    ];
-    shuffleBtns.forEach(btn => {
-      if (btn) btn.classList.toggle('active', this.isShuffle);
-    });
-
-    if (window.updateMobileUpNextUI) {
-      window.updateMobileUpNextUI();
-    }
-    if (window.onMusicoQueueChange) {
-      window.onMusicoQueueChange();
-    }
-
-    return this.isShuffle;
+    return this.cyclePlaybackMode();
   }
 
   /**
@@ -600,17 +607,17 @@ class MusicPlayer {
   }
 
   /**
-   * Cycle through 3 playback modes in exact order:
-   * Repeat One -> Shuffle ON -> Play in Line -> Repeat One -> ...
+   * Cycle through 3 playback modes in intuitive order:
+   * Play in Line -> Shuffle ON -> Repeat One -> Play in Line -> ...
    */
   cyclePlaybackMode() {
-    let nextMode = 'repeat_one';
-    if (this.playbackMode === 'repeat_one') {
+    let nextMode = 'shuffle';
+    if (this.playbackMode === 'normal') {
       nextMode = 'shuffle';
     } else if (this.playbackMode === 'shuffle') {
-      nextMode = 'normal';
-    } else {
       nextMode = 'repeat_one';
+    } else { // 'repeat_one'
+      nextMode = 'normal';
     }
 
     this.setPlaybackMode(nextMode);
@@ -620,17 +627,27 @@ class MusicPlayer {
   updatePlaybackModeUI() {
     const mode = this.playbackMode || (this.isShuffle ? 'shuffle' : (this.repeatMode === 'one' ? 'repeat_one' : 'normal'));
 
-    const pcShuffleBtn = document.getElementById('filterShuffleBtn');
-    if (pcShuffleBtn) {
-      pcShuffleBtn.classList.toggle('active', mode !== 'normal');
-    }
-
-    const mobileBtns = [
+    const allButtons = [
+      document.getElementById('filterShuffleBtn'),
       document.getElementById('mobileFilterShuffleBtn'),
-      document.getElementById('mobileFullFilterShuffleBtn')
-    ];
-    mobileBtns.forEach(btn => {
-      if (btn) btn.classList.toggle('active', this.isShuffle);
+      document.getElementById('mobileFullFilterShuffleBtn'),
+      document.getElementById('homePillShuffle')
+    ].filter(Boolean);
+
+    allButtons.forEach(btn => {
+      if (mode === 'repeat_one') {
+        btn.textContent = 'Repeat 1';
+        btn.classList.add('active');
+        btn.title = 'Playback Mode: Repeat One (Loops active song. Click for Play in Line)';
+      } else if (mode === 'shuffle') {
+        btn.textContent = 'Shuffle';
+        btn.classList.add('active');
+        btn.title = 'Playback Mode: Shuffle ON (Random order. Click for Repeat One)';
+      } else { // 'normal'
+        btn.textContent = 'Play in Line';
+        btn.classList.remove('active');
+        btn.title = 'Playback Mode: Play in Line (Sequential order. Click for Shuffle)';
+      }
     });
   }
 
