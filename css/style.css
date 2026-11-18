@@ -1233,25 +1233,18 @@ body {
 .search-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  z-index: 100;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 2500;
   display: none;
   align-items: flex-start;
   justify-content: center;
   padding-top: 100px;
-}
-
-@media (min-width: 1081px) {
-  .search-overlay {
-    left: 82px;
-  }
-}
-
-@media (max-width: 1080px) and (min-width: 769px) {
-  .search-overlay {
-    left: 78px;
-  }
 }
 
 .search-overlay.open {
@@ -1424,6 +1417,8 @@ body {
   border-radius: 14px;
   padding: 6px;
   min-width: 170px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
   display: none;
   flex-direction: column;
@@ -7049,9 +7044,9 @@ body[data-theme="light"] .genre-card {
 /* Main Media & Up Next Row */
 .expanded-media-queue-row {
   display: flex;
-  gap: 16px;
+  gap: 20px;
   align-items: stretch;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   flex: 1;
   min-height: 0;
 }
@@ -7059,13 +7054,47 @@ body[data-theme="light"] .genre-card {
 /* Large Square Cover Art + Visual Lyrics Overlay */
 .expanded-cover-art-container {
   position: relative;
-  width: 250px;
-  height: 250px;
-  border-radius: 18px;
+  aspect-ratio: 1 / 1;
+  width: min(340px, calc(100vh - 290px));
+  height: min(340px, calc(100vh - 290px));
+  min-width: 300px;
+  min-height: 300px;
+  border-radius: 20px;
   overflow: hidden;
   flex-shrink: 0;
   background-color: #111111;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.expanded-cover-options-btn {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 0;
+}
+
+.expanded-cover-options-btn:hover {
+  background: rgba(0, 0, 0, 0.85);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.08);
+}
+
+.expanded-cover-options-btn img {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .expanded-cover-art-img {
@@ -7225,7 +7254,7 @@ body[data-theme="light"] .genre-card {
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  max-height: 220px;
+  max-height: min(330px, calc(100vh - 300px));
 }
 
 .expanded-up-next-list::-webkit-scrollbar {
@@ -7290,10 +7319,25 @@ body[data-theme="light"] .genre-card {
   border: none;
   color: #8E8E93;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.expanded-queue-options-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.expanded-queue-options-btn img {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 /* Bottom Playback Controls Row */
@@ -8985,8 +9029,9 @@ body[data-theme="light"] .profile-name-edit-input {
 
 .stats-triple-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 
 .stats-dual-row {
@@ -9004,6 +9049,14 @@ body[data-theme="light"] .profile-name-edit-input {
   flex-direction: column;
   box-sizing: border-box;
   transition: border-color 0.15s ease, background-color 0.15s ease;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stats-card.media-stat-card {
+  min-width: 0;
+  height: 96px;
+  justify-content: center;
 }
 
 .stats-card:hover {
@@ -9078,6 +9131,8 @@ body[data-theme="light"] .profile-name-edit-input {
   gap: 10px;
   margin-top: 6px;
   overflow: hidden;
+  min-width: 0;
+  width: 100%;
 }
 
 .stats-media-thumb {
@@ -9099,8 +9154,10 @@ body[data-theme="light"] .profile-name-edit-input {
 .stats-media-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   overflow: hidden;
+  min-width: 0;
+  flex: 1;
 }
 
 .stats-media-title {
@@ -9111,6 +9168,8 @@ body[data-theme="light"] .profile-name-edit-input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
 }
 
 .stats-media-sub {
@@ -9120,6 +9179,8 @@ body[data-theme="light"] .profile-name-edit-input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
 }
 
 /* Listening Time Distribution */

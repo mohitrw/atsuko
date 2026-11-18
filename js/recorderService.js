@@ -295,12 +295,13 @@
         coverUrl: 'assets/atsuko.svg',
         fileBlob: savedFile,
         fileHandle: fileHandle,
-        isLocal: true
+        isLocal: true,
+        isRecording: true
       };
 
       // Add to FolderService
       if (recFolder) {
-        window.folderService.assignSongsToFolder(recFolder.id, [songId]);
+        window.folderService.assignSongsToFolder(recFolder.id, [songId], window.allTracks || []);
       }
 
       // Add to dataFolderService .atu data

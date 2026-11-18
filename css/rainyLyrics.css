@@ -1,0 +1,199 @@
+/* ==========================================================================
+   ATSUKO - RAINY WINDOW LYRICS VIEW SYSTEM (v146)
+   Immersive fogged-glass rainy window lyric effect (Key: "B")
+   OLED pure black, condensation, sliding drops, wet trails, and refraction
+   ========================================================================== */
+
+@font-face {
+  font-family: 'RainyDisplayFont';
+  src: url('../fonts/impact.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'RainyDisplayFontWide';
+  src: url('../fonts/ariblk.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.rainy-lyrics-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000000;
+  z-index: 999999;
+  overflow: hidden;
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.rainy-lyrics-overlay.rainy-cursor-hidden {
+  cursor: none !important;
+}
+
+.rainy-lyrics-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 120x120px Top-Right Hover Zone */
+.rainy-top-right-zone {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  z-index: 1000000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 22px;
+  box-sizing: border-box;
+}
+
+/* Subtle, low-contrast collapse button */
+.rainy-exit-btn {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.rainy-exit-btn.visible {
+  opacity: 0.35;
+  pointer-events: auto;
+}
+
+.rainy-exit-btn.visible:hover {
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: scale(1.08);
+}
+
+.rainy-exit-btn.visible:active {
+  transform: scale(0.95);
+}
+
+.rainy-exit-btn img {
+  width: 18px;
+  height: 18px;
+  display: block;
+  opacity: 0.9;
+}
+
+/* Hidden Debug Panel (Toggle with 'D' in Rainy Mode) */
+.rainy-debug-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  z-index: 1000001;
+  background: rgba(14, 16, 20, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 16px 18px;
+  color: #E5E5EA;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  width: 250px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+  display: none;
+  user-select: none;
+}
+
+.rainy-debug-panel.open {
+  display: block;
+}
+
+.rainy-debug-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.02em;
+}
+
+.rainy-debug-row {
+  margin-bottom: 10px;
+}
+
+.rainy-debug-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: #A1A1A6;
+  font-size: 11.5px;
+}
+
+.rainy-debug-slider {
+  width: 100%;
+  accent-color: #FFFFFF;
+  cursor: pointer;
+  height: 4px;
+}
+
+/* Storm Notification Badge (Shift + B) */
+.rainy-storm-badge {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  z-index: 1000000;
+  background: rgba(14, 18, 26, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  padding: 8px 18px;
+  color: #FFFFFF;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+
+.rainy-storm-badge.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.rainy-lyrics-canvas {
+  touch-action: none;
+  cursor: grab;
+}
+
+.rainy-lyrics-canvas.dragging {
+  cursor: grabbing !important;
+}

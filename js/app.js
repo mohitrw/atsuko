@@ -54,6 +54,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   let lastFullViewTrackId = null;
   let isFullViewControlsVisible = true;
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  window.escapeHtml = escapeHtml;
+
   // =========================================================================
   // FAVOURITES PERSISTENCE HELPERS
   // =========================================================================
@@ -186,7 +197,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // DOM Elements
   const songsListContainer = document.getElementById('songsListContainer');
   const pcLyricsContainer = document.getElementById('pcLyricsContainer');
-  let currentPcMode = 1; // 1: All Songs, 2: Lyrics, 3: Column/Grid, 4: Up Next/Queue
+  const savedAllSongsMode = parseInt(localStorage.getItem('atsuko_all_songs_view_mode'), 10);
+  let currentPcMode = (savedAllSongsMode === 3) ? 3 : 1; // 1: All Songs, 2: Lyrics, 3: Column/Grid, 4: Up Next/Queue
+
+  function isRecordingTrack(t) {
+    if (!t) return false;
+    if (t.isRecording) return true;
+    if (t.source === 'recorded') return true;
+    if (typeof t.id === 'string' && t.id.startsWith('disk_rec_')) return true;
+    return false;
+  }
+  window.isRecordingTrack = isRecordingTrack;
   const addFolderBtn = document.getElementById('addFolderBtn');
   const searchBtn = document.getElementById('searchBtn');
   const searchOverlay = document.getElementById('searchOverlay');
@@ -209,6 +230,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   const viewDropdownMenu = document.getElementById('viewDropdownMenu');
   const contextMenu = document.getElementById('songContextMenu');
   const toastMessage = document.getElementById('toastMessage');
+
+  /**
+   * Universal Context Menu Positioning Engine
+   * Ensures context menus stay strictly within the viewport, never getting hidden or cut off.
+   * If there is insufficient room below, flips upward or clamps safely above the bottom margin.
+   */
+  function positionContextMenu(menuEl, clientX, clientY, targetEl) {
+    if (!menuEl) return;
+
+    // Temporarily make it open with visibility hidden to measure true rendered height & width
+    menuEl.style.visibility = 'hidden';
+    menuEl.classList.add('open');
+
+    const menuRect = menuEl.getBoundingClientRect();
+    const menuWidth = menuRect.width || 190;
+    const menuHeight = menuRect.height || 360;
+
+    const margin = 12;
+    const maxLeft = window.innerWidth - menuWidth - margin;
+    const maxTop = window.innerHeight - menuHeight - margin;
+
+    let left = clientX - 80;
+    if (left > maxLeft) left = maxLeft;
+    if (left < margin) left = margin;
+
+    let top = clientY + 8;
+    // If the menu would overflow off the bottom of the screen
+    if (top > maxTop) {
+      if (targetEl && targetEl.getBoundingClientRect) {
+        const targetRect = targetEl.getBoundingClientRect();
+        const aboveTop = targetRect.top - menuHeight - 6;
+        if (aboveTop >= margin) {
+          top = aboveTop;
+        } else {
+          top = Math.max(margin, maxTop);
+        }
+      } else if (clientY - menuHeight - 8 >= margin) {
+        top = clientY - menuHeight - 8;
+      } else {
+        top = Math.max(margin, maxTop);
+      }
+    }
+    if (top < margin) top = margin;
+
+    menuEl.style.left = `${Math.round(left)}px`;
+    menuEl.style.top = `${Math.round(top)}px`;
+    menuEl.style.visibility = '';
+  }
 
   /**
    * Synchronize the view selector label across all headers (desktop player & home)
@@ -594,10 +663,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         existing.trackIds = mergedTids;
         existing.songIds = mergedTids;
       } else {
-        const hasLive = incomingTids.some(id => allTracks.some(t => t.id === id && !t.isMissing));
-        if (hasLive) {
-          plMap.set(key, { ...pl, trackIds: incomingTids, songIds: incomingTids });
-        }
+        plMap.set(key, { ...pl, trackIds: incomingTids, songIds: incomingTids });
       }
     }
 
@@ -903,7 +969,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           recFolder = res.folder;
         }
         if (recFolder) {
-          window.folderService.assignSongsToFolder(recFolder.id, diskRecs.map(r => r.id));
+          diskRecs.forEach(r => {
+            r.folderId = recFolder.id;
+            r.isRecording = true;
+            r.source = 'recorded';
+          });
+          window.folderService.assignSongsToFolder(recFolder.id, diskRecs.map(r => r.id), allTracks);
         }
       }
     } catch (err) {
@@ -914,7 +985,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function playRecordingItem(rec) {
     if (!rec) return;
-    player.setQueue([rec], 0, true);
+    const recs = (typeof getAppRecordings === 'function' ? getAppRecordings() : []) || [];
+    const validRecs = recs.length > 0 ? recs : [rec];
+    const startIndex = Math.max(0, validRecs.findIndex(r => r.id === rec.id));
+    player.setQueue(validRecs, startIndex >= 0 ? startIndex : 0, true);
     player.updateNowPlayingUI();
     showToast(`Playing ${rec.title || 'recording'}`);
   }
@@ -944,24 +1018,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (res.data.folders && window.folderService) {
               window.folderService.init(res.data.folders);
             }
-            await fileManager.clearPlaylists();
-            if (Array.isArray(res.data.playlists) && res.data.playlists.length > 0) {
+            const existingDbPlaylists = (await fileManager.getPlaylists()) || [];
+            const plMap = new Map();
+            existingDbPlaylists.forEach(p => {
+              if (p && p.name) plMap.set(p.name.trim().toLowerCase(), { ...p });
+            });
+            if (Array.isArray(res.data.playlists)) {
               if (window.dataFolderService) {
                 window.dataFolderService.originalAtuPlaylists = JSON.parse(JSON.stringify(res.data.playlists));
               }
-              const livePlaylists = [];
               for (const pl of res.data.playlists) {
+                if (!pl || !pl.name) continue;
+                const k = pl.name.trim().toLowerCase();
                 const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
-                const hasLive = tids.some(id => allTracks.some(t => t.id === id && !t.isMissing));
-                if (hasLive) {
-                  const p = { ...pl, trackIds: tids, songIds: tids };
-                  livePlaylists.push(p);
-                  await fileManager.savePlaylist(p);
+                if (plMap.has(k)) {
+                  const existing = plMap.get(k);
+                  const existingTids = Array.isArray(existing.trackIds) ? existing.trackIds : [];
+                  const mergedTids = Array.from(new Set([...existingTids, ...tids]));
+                  existing.trackIds = mergedTids;
+                  existing.songIds = mergedTids;
+                } else {
+                  plMap.set(k, { ...pl, trackIds: tids, songIds: tids });
                 }
               }
-              playlists = livePlaylists;
-            } else {
-              playlists = [];
+            }
+            playlists = Array.from(plMap.values());
+            for (const p of playlists) {
+              await fileManager.savePlaylist(p);
             }
             if (Array.isArray(res.data.songs) && res.data.songs.length > 0) {
               if (window.dataFolderService) {
@@ -1035,13 +1118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize Library from IndexedDB
   async function initLibrary() {
-    playlists = await fileManager.getPlaylists();
-    // Only display playlists that have at least one real live song present in the library (or just created by user in this session)
-    playlists = (playlists || []).filter(pl => {
-      const tids = Array.isArray(pl.trackIds) ? pl.trackIds : (Array.isArray(pl.songIds) ? pl.songIds : []);
-      const liveCount = tids.filter(id => allTracks.some(t => t.id === id && !t.isMissing)).length;
-      return liveCount > 0 || pl.justCreated === true;
-    });
+    playlists = (await fileManager.getPlaylists()) || [];
     const savedTracks = await fileManager.loadStoredTracks();
     if (savedTracks && savedTracks.length > 0) {
       allTracks = [...savedTracks];
@@ -1149,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (pcLyricsContainer) pcLyricsContainer.style.display = 'none';
     songsListContainer.style.display = 'flex';
 
-    let filtered = allTracks;
+    let filtered = allTracks.filter(t => !isRecordingTrack(t));
 
     // Apply search filter if query is present
     if (searchQuery.trim()) {
@@ -1164,6 +1241,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // When there are no songs or no folder selected -> Show 'No Songs' empty state
     if (filtered.length === 0) {
       songsListContainer.className = 'songs-list empty-container';
+      if (searchQuery.trim()) {
+        songsListContainer.innerHTML = `
+          <div class="empty-state">
+            <h3 class="empty-title">No results found</h3>
+            <p class="empty-subtitle">No songs matching "<strong>${escapeHtml(searchQuery)}</strong>"</p>
+          </div>
+        `;
+        return;
+      }
       songsListContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">
@@ -1353,7 +1439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!songsListContainer) return;
     songsListContainer.className = 'songs-list pc-masonry-grid';
 
-    let filtered = allTracks;
+    let filtered = allTracks.filter(t => !isRecordingTrack(t));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(t =>
@@ -1365,6 +1451,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (filtered.length === 0) {
       songsListContainer.className = 'songs-list empty-container';
+      if (searchQuery.trim()) {
+        songsListContainer.innerHTML = `
+          <div class="empty-state">
+            <h3 class="empty-title">No results found</h3>
+            <p class="empty-subtitle">No songs matching "<strong>${escapeHtml(searchQuery)}</strong>"</p>
+          </div>
+        `;
+        return;
+      }
       songsListContainer.innerHTML = `
         <div class="empty-state">
           <h3 class="empty-title">No Songs</h3>
@@ -1479,7 +1574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (songsListContainer) songsListContainer.style.display = 'none';
     unifiedScroll.style.display = 'flex';
 
-    let filtered = allTracks;
+    let filtered = allTracks.filter(t => !isRecordingTrack(t));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(t =>
@@ -2178,6 +2273,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (modeNum > 4) modeNum = 1;
 
     currentPcMode = modeNum;
+    if (modeNum === 3) {
+      localStorage.setItem('atsuko_all_songs_view_mode', '3');
+    } else {
+      localStorage.setItem('atsuko_all_songs_view_mode', '1');
+    }
 
     // Reset all special views and left sections cleanly
     prepareViewTransition(null, []);
@@ -2827,6 +2927,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (typeof openSearchOverlay === 'function') {
           openSearchOverlay(true);
         } else if (searchOverlay) {
+          if (typeof setAllFilter === 'function') setAllFilter();
           searchOverlay.classList.add('open');
           enterSearchHistory();
           if (searchInput) {
@@ -5209,8 +5310,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       clientX = e.touches[0].clientX;
       clientY = e.touches[0].clientY;
     }
+    const target = e ? (e.currentTarget || e.target) : null;
     if (clientX === undefined || clientY === undefined) {
-      const target = e.currentTarget || e.target;
       if (target && target.getBoundingClientRect) {
         const r = target.getBoundingClientRect();
         clientX = r.left + r.width / 2;
@@ -5221,12 +5322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-    const y = Math.min(window.innerHeight - 150, Math.max(10, clientY + 8));
-
-    albumContextMenu.style.left = `${x}px`;
-    albumContextMenu.style.top = `${y}px`;
-    albumContextMenu.classList.add('open');
+    positionContextMenu(albumContextMenu, clientX, clientY, target);
   }
 
   // =========================================================================
@@ -5526,17 +5622,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     activeContextFolderId = folderId;
     if (!folderContextMenu) return;
 
-    let clientX = e.clientX;
-    let clientY = e.clientY;
+    let clientX = e ? e.clientX : undefined;
+    let clientY = e ? e.clientY : undefined;
+    const target = e ? (e.currentTarget || e.target) : null;
     if (clientX === undefined || clientY === undefined) {
-      const rect = e.currentTarget ? e.currentTarget.getBoundingClientRect() : { left: 100, top: 100 };
-      clientX = rect.left;
-      clientY = rect.top;
+      if (target && target.getBoundingClientRect) {
+        const r = target.getBoundingClientRect();
+        clientX = r.left + r.width / 2;
+        clientY = r.bottom;
+      } else {
+        clientX = 100;
+        clientY = 100;
+      }
     }
 
-    folderContextMenu.style.left = `${Math.min(clientX, window.innerWidth - 180)}px`;
-    folderContextMenu.style.top = `${Math.min(clientY, window.innerHeight - 120)}px`;
-    folderContextMenu.classList.add('open');
+    positionContextMenu(folderContextMenu, clientX, clientY, target);
   }
 
   if (folderContextMenu) {
@@ -6217,7 +6317,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const recId = card.dataset.recordingId;
         const rec = recordings.find(r => r.id === recId);
         if (rec) {
-          player.setQueue([rec], 0, true);
+          const recIdx = recordings.findIndex(r => r.id === recId);
+          player.setQueue(recordings, recIdx >= 0 ? recIdx : 0, true);
           player.updateNowPlayingUI();
           renderRecorderListView();
         }
@@ -6280,7 +6381,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const recId = card.dataset.recordingId;
         const rec = recordings.find(r => r.id === recId);
         if (rec) {
-          player.setQueue([rec], 0, true);
+          const recIdx = recordings.findIndex(r => r.id === recId);
+          player.setQueue(recordings, recIdx >= 0 ? recIdx : 0, true);
           player.updateNowPlayingUI();
         }
       });
@@ -6293,17 +6395,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     activeRecordingContextMenuId = recordingId;
     if (!recordingContextMenu) return;
 
-    let clientX = e.clientX;
-    let clientY = e.clientY;
+    let clientX = e ? e.clientX : undefined;
+    let clientY = e ? e.clientY : undefined;
+    const target = e ? (e.currentTarget || e.target) : null;
     if (clientX === undefined || clientY === undefined) {
-      const rect = e.currentTarget ? e.currentTarget.getBoundingClientRect() : { left: 100, top: 100 };
-      clientX = rect.left;
-      clientY = rect.top;
+      if (target && target.getBoundingClientRect) {
+        const r = target.getBoundingClientRect();
+        clientX = r.left + r.width / 2;
+        clientY = r.bottom;
+      } else {
+        clientX = 100;
+        clientY = 100;
+      }
     }
 
-    recordingContextMenu.style.left = `${Math.min(clientX, window.innerWidth - 180)}px`;
-    recordingContextMenu.style.top = `${Math.min(clientY, window.innerHeight - 120)}px`;
-    recordingContextMenu.classList.add('open');
+    positionContextMenu(recordingContextMenu, clientX, clientY, target);
   }
 
   if (recordingContextMenu) {
@@ -7405,16 +7511,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filterColumnBtn) filterColumnBtn.textContent = 'Column';
     if (player) player.updatePlaybackModeUI();
 
-    // PC Desktop View: Always reset to Mode 1 (List View) with 1st vertical bar active
+    // PC Desktop View: Respect saved Mode (Mode 1 or Mode 3) across app sessions
     if (window.innerWidth > 900) {
-      currentPcMode = 1;
+      const savedMode = parseInt(localStorage.getItem('atsuko_all_songs_view_mode'), 10);
+      currentPcMode = (savedMode === 3) ? 3 : 1;
       const libraryEq = document.querySelector('.library-equalizer-bars');
       if (libraryEq) libraryEq.style.display = 'flex';
       restoreAllSongsEqualizerBars();
       if (pcLyricsContainer) pcLyricsContainer.style.display = 'none';
-      if (songsListContainer) {
-        songsListContainer.className = 'songs-list';
-        songsListContainer.style.display = 'flex';
+      if (currentPcMode === 3) {
+        if (songsListContainer) songsListContainer.style.display = 'flex';
+        renderPcMasonryGridView();
+        if (window.updateArtistMiniPlayerVisibility) {
+          window.updateArtistMiniPlayerVisibility();
+        }
+        return;
+      } else {
+        if (songsListContainer) {
+          songsListContainer.className = 'songs-list';
+          songsListContainer.style.display = 'flex';
+        }
       }
     }
 
@@ -7429,11 +7545,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!player) return;
     const newMode = player.cyclePlaybackMode();
     if (newMode === 'shuffle') {
+      // Unselect any active genre chip in Expanded Player
+      document.querySelectorAll('.expanded-genre-chip').forEach(c => c.classList.remove('active'));
+
+      if (Array.isArray(allTracks) && allTracks.length > 0) {
+        const playableTracks = allTracks.filter(t => !isRecordingTrack(t) && !t.isMissing);
+        if (playableTracks.length > 0) {
+          const currentTrackId = player.currentTrack ? player.currentTrack.id : null;
+          let shuffled = player.shuffleArray([...playableTracks]);
+          if (currentTrackId) {
+            const foundIdx = shuffled.findIndex(t => t.id === currentTrackId);
+            if (foundIdx > 0) {
+              const [curr] = shuffled.splice(foundIdx, 1);
+              shuffled.unshift(curr);
+            }
+            player.originalQueue = [...playableTracks];
+            player.queue = shuffled;
+            player.currentIndex = 0;
+          } else {
+            player.originalQueue = [...playableTracks];
+            player.queue = shuffled;
+            player.currentIndex = 0;
+            player.loadTrack(0);
+          }
+        }
+      }
       showToast('Playback: Shuffle ON');
     } else if (newMode === 'repeat_one') {
       showToast('Playback: Repeat One');
     } else if (newMode === 'normal') {
       showToast('Playback: Play in Line');
+    }
+    if (typeof renderExpandedPlayerUpNext === 'function') {
+      renderExpandedPlayerUpNext();
     }
   }
 
@@ -7766,6 +7910,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.onMusicoQueueChange = () => {
     if (typeof isSongFullViewOpen !== 'undefined' && isSongFullViewOpen) {
       renderFullViewUpNext();
+    }
+    if (currentView === 'expanded_player' && typeof renderExpandedPlayerUpNext === 'function') {
+      renderExpandedPlayerUpNext();
     }
     if (window.innerWidth > 900) {
       const isQueueActive = (currentView === 'artist_detail' && currentArtistDetailMode === 4) ||
@@ -8914,6 +9061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         track._parsedSyncedLyrics = { isSynced: false, lines: [] };
         return track._parsedSyncedLyrics;
       }
+      window.getTrackSynchronizedLyrics = getTrackSynchronizedLyrics;
 
       function groupLyricWords(words) {
         const chunks = [];
@@ -9209,8 +9357,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (optionsBtn) {
               e.stopPropagation();
               const songId = optionsBtn.dataset.songId;
-              const song = allTracks.find(t => t.id === songId);
-              if (song) showSongContextMenu(e, song);
+              showContextMenu(e, songId);
               return;
             }
             const idx = parseInt(item.dataset.queueIndex, 10);
@@ -9321,12 +9468,20 @@ document.addEventListener('DOMContentLoaded', async () => {
           e.stopPropagation();
           if (!player || !player.audio || !player.currentTrack) return;
           const rect = expandedProgressTrack.getBoundingClientRect();
+          if (!rect.width) return;
           const clickX = e.clientX - rect.left;
-          const width = rect.width;
-          const percent = Math.max(0, Math.min(1, clickX / width));
-          const dur = player.audio.duration || player.currentTrack.duration || 0;
-          if (dur > 0) {
-            player.seek(percent * dur);
+          const percent = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+          player.seek(percent);
+        });
+      }
+
+      // Cover Art 3-Dots Options Menu
+      const expandedCoverOptionsBtn = document.getElementById('expandedCoverOptionsBtn');
+      if (expandedCoverOptionsBtn) {
+        expandedCoverOptionsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (player && player.currentTrack) {
+            showContextMenu(e, player.currentTrack.id);
           }
         });
       }
@@ -9345,8 +9500,57 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Genre Chips selection in Expanded Player
       document.querySelectorAll('.expanded-genre-chip').forEach(chip => {
         chip.addEventListener('click', () => {
+          const chipGenre = (chip.dataset.genre || chip.textContent).trim();
+          const wasActive = chip.classList.contains('active');
+
           document.querySelectorAll('.expanded-genre-chip').forEach(c => c.classList.remove('active'));
+
+          if (wasActive) {
+            // Toggled off: restore all playable tracks in queue
+            if (Array.isArray(allTracks) && allTracks.length > 0 && player) {
+              const playableTracks = allTracks.filter(t => !isRecordingTrack(t) && !t.isMissing);
+              const currentTrackId = player.currentTrack ? player.currentTrack.id : null;
+              if (currentTrackId) {
+                const rest = playableTracks.filter(t => t.id !== currentTrackId);
+                player.queue = [player.currentTrack, ...player.shuffleArray([...rest])];
+                player.currentIndex = 0;
+              } else {
+                player.setQueue(playableTracks, 0, false);
+              }
+              renderExpandedPlayerUpNext();
+            }
+            return;
+          }
+
           chip.classList.add('active');
+
+          if (Array.isArray(allTracks) && allTracks.length > 0 && player) {
+            const genreTracks = allTracks.filter(t =>
+              !isRecordingTrack(t) &&
+              !t.isMissing &&
+              (classifyTrackGenre(t) || '').toLowerCase() === chipGenre.toLowerCase()
+            );
+
+            if (genreTracks.length === 0) {
+              showToast(`No songs found for genre: ${chipGenre}`);
+              return;
+            }
+
+            const currentTrackId = player.currentTrack ? player.currentTrack.id : null;
+            let shuffledGenre = player.shuffleArray([...genreTracks]);
+
+            if (player.currentTrack && !player.audio.paused) {
+              // Current song keeps playing; Up Next songs replaced by songs of that genre (excluding current track)
+              const upcoming = shuffledGenre.filter(t => t.id !== currentTrackId);
+              player.queue = [player.currentTrack, ...upcoming];
+              player.originalQueue = [...genreTracks];
+              player.currentIndex = 0;
+            } else {
+              player.setQueue(shuffledGenre, 0, true);
+            }
+            renderExpandedPlayerUpNext();
+            showToast(`Up Next: ${chipGenre} (${genreTracks.length} song${genreTracks.length === 1 ? '' : 's'})`);
+          }
         });
       });
 
@@ -9499,42 +9703,68 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
 
       // Search Modal / Input (Desktop, Mobile & Home buttons)
-      let wasSearchOpenedFromHome = false;
-
-      function openSearchOverlay(fromHome = false) {
-        wasSearchOpenedFromHome = fromHome || (currentView === 'home');
-        if (wasSearchOpenedFromHome) {
+      function openSearchOverlay() {
+        // Always lead back to the All Songs panel regardless of which page user is on
+        if (typeof setAllFilter === 'function') {
           setAllFilter();
         }
         if (searchOverlay) {
           searchOverlay.classList.add('open');
           enterSearchHistory();
           if (searchInput) {
-            searchInput.focus();
-            searchInput.value = searchQuery;
+            searchInput.value = searchQuery || '';
+            setTimeout(() => {
+              searchInput.focus();
+              searchInput.select();
+            }, 50);
           }
         }
       }
 
       function closeSearchOverlay() {
         if (searchOverlay) searchOverlay.classList.remove('open');
-        if (wasSearchOpenedFromHome && !searchQuery.trim()) {
-          wasSearchOpenedFromHome = false;
-          renderHomePage();
-        }
+      }
+
+      function commitSearchAndClose() {
+        if (!searchOverlay || !searchOverlay.classList.contains('open')) return;
+        const query = searchInput ? searchInput.value.trim() : '';
+        searchQuery = query;
+        if (searchInput) searchInput.value = query;
+
+        // Ensure we are viewing all songs with the search query applied
+        currentFilter = 'all';
+        isGridView = false;
+        currentView = 'all_songs';
+        activePlaylistId = null;
+
+        // Synchronize navbar active states for all-songs
+        document.querySelectorAll('.menu-item-btn').forEach(b => b.classList.toggle('active', b.dataset.action === 'all-songs'));
+        document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.action === 'all-songs'));
+
+        renderSongList();
+        closeSearchOverlay();
       }
 
       const allSearchBtns = [searchBtn, document.getElementById('mobileSearchBtn'), document.getElementById('homeSearchBtn')].filter(Boolean);
       allSearchBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
-          openSearchOverlay(btn.id === 'homeSearchBtn');
+          openSearchOverlay();
         });
       });
 
-      if (closeSearchBtn && searchOverlay) {
-        closeSearchBtn.addEventListener('click', () => {
-          closeSearchOverlay();
+      if (closeSearchBtn) {
+        closeSearchBtn.title = 'Clear text';
+        closeSearchBtn.setAttribute('aria-label', 'Clear search text');
+        closeSearchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+          }
+          searchQuery = '';
+          renderSongList();
+          // Erases written search text only - does NOT close search bar!
         });
       }
 
@@ -9544,6 +9774,37 @@ document.addEventListener('DOMContentLoaded', async () => {
           renderSongList();
           if (searchQuery.trim().length > 0) {
             enterSearchHistory();
+          }
+        });
+
+        // Press Enter: Show search results in All Songs and dismiss search popup automatically
+        searchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitSearchAndClose();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            commitSearchAndClose();
+          }
+        });
+      }
+
+      const searchBoxImg = document.querySelector('.search-input-wrapper img');
+      if (searchBoxImg) {
+        searchBoxImg.style.cursor = 'pointer';
+        searchBoxImg.title = 'Search (Enter)';
+        searchBoxImg.addEventListener('click', (e) => {
+          e.stopPropagation();
+          commitSearchAndClose();
+        });
+      }
+
+      // Clicking anywhere on the search overlay outside the search card commits and closes
+      if (searchOverlay) {
+        searchOverlay.addEventListener('click', (e) => {
+          if (!e.target.closest('.search-box-card')) {
+            e.stopPropagation();
+            commitSearchAndClose();
           }
         });
       }
@@ -9806,6 +10067,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           currentSec = Math.round(stats.totalListeningSeconds || 0);
           currentPlays = stats.totalSongsPlayed || 0;
         }
+        if (currentSec > 60 && currentPlays > Math.floor(currentSec / 45)) {
+          currentPlays = Math.max(1, Math.round(currentSec / 195));
+        }
 
         // Folder origins for clear identification
         const prevFolderName = (window.dataFolderService && window.dataFolderService.previousFolderName) ||
@@ -9832,7 +10096,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const fileJoined = data?.profile?.joinedAt ? new Date(data.profile.joinedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Unknown';
 
         const fileSec = Math.round((data && data.stats && data.stats.totalListeningSec) || 0);
-        const filePlays = (data && data.stats && data.stats.songsPlayed) || 0;
+        let filePlays = (data && data.stats && data.stats.songsPlayed) || 0;
+        if (fileSec > 60 && filePlays > Math.floor(fileSec / 45)) {
+          filePlays = Math.max(1, Math.round(fileSec / 195));
+          if (data && data.stats) data.stats.songsPlayed = filePlays;
+        }
 
         // The 3 reconciliation buttons are ONLY shown if user moved to a new folder containing a new .atu file
         const showReconcile = !!(window.dataFolderService && window.dataFolderService.pendingReconciliation);
@@ -10449,8 +10717,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Close modals when clicking backdrop
       window.addEventListener('click', (e) => {
-        if (e.target === searchOverlay) closeSearchOverlay();
-        if (e.target === settingsModal) settingsModal.classList.remove('open');
+        if (searchOverlay && searchOverlay.classList.contains('open')) {
+          if (!e.target.closest('.search-box-card') && !e.target.closest('#searchBtn') && !e.target.closest('#mobileSearchBtn') && !e.target.closest('#homeSearchBtn')) {
+            commitSearchAndClose();
+            return;
+          }
+        }
+        if (settingsModal && e.target === settingsModal) settingsModal.classList.remove('open');
         if (playlistModal && e.target === playlistModal) closePlaylistModal();
         if (contextMenu) contextMenu.classList.remove('open');
         if (playlistContextMenu) playlistContextMenu.classList.remove('open');
@@ -10493,14 +10766,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           removeFolderBtn.style.display = (track && track.folderId) ? 'block' : 'none';
         }
 
-        let clientX = e.clientX;
-        let clientY = e.clientY;
-        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
+        const addToFavBtn = document.getElementById('contextAddToFavBtn');
+        if (addToFavBtn) {
+          const isFav = isFavourite(trackId);
+          addToFavBtn.textContent = isFav ? 'Remove from Fav.' : 'Add to Fav.';
+          addToFavBtn.style.display = 'block';
+        }
+
+        let clientX = e ? e.clientX : undefined;
+        let clientY = e ? e.clientY : undefined;
+        if (e && (clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
           clientX = e.touches[0].clientX;
           clientY = e.touches[0].clientY;
         }
+        const target = e ? (e.currentTarget || e.target) : null;
         if (clientX === undefined || clientY === undefined) {
-          const target = e.currentTarget || e.target;
           if (target && target.getBoundingClientRect) {
             const r = target.getBoundingClientRect();
             clientX = r.left + r.width / 2;
@@ -10511,12 +10791,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-        const y = Math.min(window.innerHeight - 250, Math.max(10, clientY + 8));
-
-        contextMenu.style.left = `${x}px`;
-        contextMenu.style.top = `${y}px`;
-        contextMenu.classList.add('open');
+        positionContextMenu(contextMenu, clientX, clientY, target);
       }
 
       // Playlist context menu for 3-dots on playlist cards
@@ -10525,14 +10800,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         playlistContextMenuTargetId = playlistId;
         if (!playlistContextMenu) return;
 
-        let clientX = e.clientX;
-        let clientY = e.clientY;
-        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
+        let clientX = e ? e.clientX : undefined;
+        let clientY = e ? e.clientY : undefined;
+        if (e && (clientX === undefined || clientY === undefined) && e.touches && e.touches[0]) {
           clientX = e.touches[0].clientX;
           clientY = e.touches[0].clientY;
         }
+        const target = e ? (e.currentTarget || e.target) : null;
         if (clientX === undefined || clientY === undefined) {
-          const target = e.currentTarget || e.target;
           if (target && target.getBoundingClientRect) {
             const r = target.getBoundingClientRect();
             clientX = r.left + r.width / 2;
@@ -10543,12 +10818,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-        const y = Math.min(window.innerHeight - 200, Math.max(10, clientY + 8));
-
-        playlistContextMenu.style.left = `${x}px`;
-        playlistContextMenu.style.top = `${y}px`;
-        playlistContextMenu.classList.add('open');
+        positionContextMenu(playlistContextMenu, clientX, clientY, target);
       }
 
       // Now Playing cover image 3-dot options buttons (PC & Mobile)
@@ -10578,6 +10848,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           if (action === 'select') {
             openSelectMode(contextTrackId);
+          } else if (action === 'add-to-fav') {
+            const added = toggleFavourite(contextTrackId);
+            syncToAtu(true);
+            showToast(added ? `Added "${track.title}" to Favorites` : `Removed "${track.title}" from Favorites`);
+            if (currentView === 'favourites') {
+              renderFavouritesGridView();
+            }
+            contextMenu.classList.remove('open');
+            return;
           } else if (action === 'add-to-playlist') {
             openAddToPlaylistModal([contextTrackId]);
           } else if (action === 'move-to-folder') {
@@ -10692,8 +10971,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           clientX = e.touches[0].clientX;
           clientY = e.touches[0].clientY;
         }
+        const target = e ? (e.currentTarget || e.target) : null;
         if (clientX === undefined || clientY === undefined) {
-          const target = e.currentTarget || e.target;
           if (target && target.getBoundingClientRect) {
             const r = target.getBoundingClientRect();
             clientX = r.left + r.width / 2;
@@ -10704,12 +10983,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        const x = Math.min(window.innerWidth - 190, Math.max(10, clientX - 80));
-        const y = Math.min(window.innerHeight - 150, Math.max(10, clientY + 8));
-
-        artistContextMenu.style.left = `${x}px`;
-        artistContextMenu.style.top = `${y}px`;
-        artistContextMenu.classList.add('open');
+        positionContextMenu(artistContextMenu, clientX, clientY, target);
       }
 
       // Artist Context Menu Actions (Play this Artist, Delete Artist)
@@ -11306,6 +11580,40 @@ document.addEventListener('DOMContentLoaded', async () => {
             const active = document.activeElement;
             if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
 
+            // Keyboard Shortcut — B or Shift+B (Toggle Rainy Window or Heavy Storm Mode)
+            if (e.code === 'KeyB' || e.key === 'b' || e.key === 'B') {
+              const active = document.activeElement;
+              if (active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable)) return;
+              if (e.ctrlKey || e.altKey || e.metaKey) return;
+              e.preventDefault();
+              if (window.RainyLyrics) {
+                if (window.RainyLyrics.isOpen) {
+                  if (e.shiftKey) {
+                    window.RainyLyrics.toggleHeavyRain();
+                  } else {
+                    window.RainyLyrics.close();
+                  }
+                } else if (!e.shiftKey) {
+                  window.RainyLyrics.open();
+                }
+              }
+              return;
+            }
+
+            // Keyboard Shortcut — Escape (Exit Rainy Mode or Full View)
+            if (e.code === 'Escape' || e.key === 'Escape') {
+              if (window.RainyLyrics && window.RainyLyrics.isOpen) {
+                e.preventDefault();
+                window.RainyLyrics.close();
+                return;
+              }
+              if (isSongFullViewOpen) {
+                e.preventDefault();
+                closeSongFullView();
+                return;
+              }
+            }
+
             // Keyboard Shortcut — L (Open / Exit Full View)
             if (e.code === 'KeyL' || e.key === 'l' || e.key === 'L') {
               const active = document.activeElement;
@@ -11325,6 +11633,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (e.code === 'Space') {
               e.preventDefault();
+              if (window.RainyLyrics && window.RainyLyrics.isOpen) {
+                if (player) player.togglePlay();
+                return;
+              }
               if (typeof isSongFullViewOpen !== 'undefined' && isSongFullViewOpen) {
                 handleFullViewSpaceOrScreenClick();
                 return;
@@ -11905,9 +12217,13 @@ document.addEventListener('DOMContentLoaded', async () => {
               statsTotalListeningTime.textContent = timeStr;
             }
 
-            // 2. Songs Played (Recover from track playCounts if totalSongsPlayed is 0)
+            // 2. Songs Played (Recover from track playCounts if totalSongsPlayed is 0 or normalize if inflated)
             let totalSongs = stats.totalSongsPlayed || 0;
-            if (totalSongs === 0 && allTracks && allTracks.length > 0) {
+            if (stats.totalListeningSeconds > 60 && totalSongs > Math.floor(stats.totalListeningSeconds / 45)) {
+              totalSongs = Math.max(1, Math.round(stats.totalListeningSeconds / 195));
+              stats.totalSongsPlayed = totalSongs;
+              fm.savePlaybackStats(stats);
+            } else if (totalSongs === 0 && allTracks && allTracks.length > 0) {
               let sumPlays = 0;
               allTracks.forEach(t => { if (t.playCount) sumPlays += t.playCount; });
               if (sumPlays > 0) {
@@ -12178,6 +12494,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.onMusicoTrackChange = function (track) {
             if (typeof origOnMusicoTrackChange === 'function') {
               origOnMusicoTrackChange(track);
+            }
+            if (window.RainyLyrics && window.RainyLyrics.isOpen) {
+              window.RainyLyrics.onTrackChange(track);
             }
             _statsDataDirty = true;
             _profileDataDirty = true;

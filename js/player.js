@@ -114,6 +114,17 @@ class MusicPlayer {
         const fm = window.fileManager || window.appFileManager;
         if (elapsed > 0.5 && this.currentTrack && fm) {
           fm.recordPlaybackSeconds(elapsed, this.currentTrack);
+          this._trackListenDuration = (this._trackListenDuration || 0) + elapsed;
+          const trackDur = this.audio.duration || this.currentTrack.duration || 180;
+          const threshold = Math.min(30, Math.max(10, trackDur * 0.5));
+          if (this._trackListenDuration >= threshold && !this._hasRecordedCurrentTrackPlay) {
+            this._hasRecordedCurrentTrackPlay = true;
+            fm.recordSongPlay(this.currentTrack);
+            this.currentTrack.playCount = (this.currentTrack.playCount || 0) + 1;
+            if (typeof fm.saveTrackToDB === 'function') {
+              fm.saveTrackToDB(this.currentTrack);
+            }
+          }
           if (typeof window.syncToAtu === 'function') {
             window.syncToAtu();
           }
@@ -125,17 +136,6 @@ class MusicPlayer {
     this.audio.addEventListener('play', () => {
       this.isPlaying = true;
       lastPlaybackTime = Date.now();
-      const fm = window.fileManager || window.appFileManager;
-      if (this.currentTrack && fm) {
-        fm.recordSongPlay(this.currentTrack);
-        this.currentTrack.playCount = (this.currentTrack.playCount || 0) + 1;
-        if (typeof fm.saveTrackToDB === 'function') {
-          fm.saveTrackToDB(this.currentTrack);
-        }
-        if (typeof window.syncToAtu === 'function') {
-          window.syncToAtu();
-        }
-      }
       if (!this.isAudioCtxInitialized) {
         this.initWebAudio();
       }
@@ -214,9 +214,11 @@ class MusicPlayer {
 
     if (this.playbackMode === 'shuffle') {
       this.isShuffle = true;
-      this.queue = this.shuffleArray([...tracks]);
-      const currentInShuffled = this.queue.findIndex(t => t.id === tracks[startIndex]?.id);
-      this.currentIndex = currentInShuffled !== -1 ? currentInShuffled : 0;
+      const targetTrack = tracks[startIndex];
+      const otherTracks = tracks.filter((_, i) => i !== startIndex);
+      const shuffledOthers = this.shuffleArray([...otherTracks]);
+      this.queue = targetTrack ? [targetTrack, ...shuffledOthers] : this.shuffleArray([...tracks]);
+      this.currentIndex = 0;
     } else {
       this.isShuffle = false;
       this.queue = [...tracks];
@@ -243,6 +245,8 @@ class MusicPlayer {
     if (index < 0 || index >= this.queue.length) return;
     this.currentIndex = index;
     this.currentTrack = this.queue[index];
+    this._trackListenDuration = 0;
+    this._hasRecordedCurrentTrackPlay = false;
 
     // Revoke previous audio blob URL to prevent memory leaks
     if (this.activeAudioUrl) {
@@ -253,7 +257,24 @@ class MusicPlayer {
     }
 
     if (this.currentTrack) {
-      const hasValidBlob = this.currentTrack.fileBlob instanceof Blob;
+      let hasValidBlob = this.currentTrack.fileBlob instanceof Blob;
+      if (!hasValidBlob && this.currentTrack.fileHandle && typeof this.currentTrack.fileHandle.getFile === 'function') {
+        try {
+          this.currentTrack.fileBlob = await this.currentTrack.fileHandle.getFile();
+          hasValidBlob = this.currentTrack.fileBlob instanceof Blob;
+        } catch (e) {}
+      }
+      if (!hasValidBlob && this.currentTrack.id && String(this.currentTrack.id).startsWith('disk_rec_') && window.dataFolderService) {
+        try {
+          const diskRecs = await window.dataFolderService.getDiskRecordings();
+          const match = diskRecs.find(r => r.id === this.currentTrack.id || r.fileName === this.currentTrack.fileName);
+          if (match && match.fileBlob instanceof Blob) {
+            this.currentTrack.fileBlob = match.fileBlob;
+            hasValidBlob = true;
+          }
+        } catch (e) {}
+      }
+
       if (this.currentTrack.isMissing || (!hasValidBlob && !this.currentTrack.audioUrl)) {
         this.currentTrack.isMissing = true;
         if (typeof window.showToast === 'function') {
@@ -399,7 +420,33 @@ class MusicPlayer {
    * Next Track
    */
   next() {
-    if (this.queue.length === 0) return;
+    if (this.queue.length === 0) {
+      if (Array.isArray(window.allTracks) && window.allTracks.length > 0) {
+        const playable = window.allTracks.filter(t => !t.isMissing && !t.isRecording && t.source !== 'recorded' && !String(t.id || '').startsWith('disk_rec_'));
+        if (playable.length > 0) {
+          this.setQueue(playable, 0, true);
+          return;
+        }
+      }
+      return;
+    }
+
+    if (this.queue.length === 1 && Array.isArray(window.allTracks) && window.allTracks.length > 1) {
+      const isRec = this.currentTrack && (this.currentTrack.isRecording || this.currentTrack.source === 'recorded' || String(this.currentTrack.id || '').startsWith('disk_rec_'));
+      let candidatePool = [];
+      if (isRec && typeof window.getAppRecordings === 'function') {
+        candidatePool = window.getAppRecordings();
+      } else {
+        candidatePool = window.allTracks.filter(t => !t.isMissing && !t.isRecording && t.source !== 'recorded' && !String(t.id || '').startsWith('disk_rec_'));
+      }
+      if (candidatePool.length > 1) {
+        const curIdx = candidatePool.findIndex(t => t.id === this.currentTrack.id);
+        const nextIdx = (curIdx + 1) % candidatePool.length;
+        this.setQueue(candidatePool, nextIdx, true);
+        return;
+      }
+    }
+
     let nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.queue.length) {
       nextIndex = 0;
@@ -411,12 +458,43 @@ class MusicPlayer {
    * Previous Track
    */
   prev() {
-    if (this.queue.length === 0) return;
-    if (this.audio.currentTime > 3) {
+    if (this.queue.length === 0) {
+      if (Array.isArray(window.allTracks) && window.allTracks.length > 0) {
+        const playable = window.allTracks.filter(t => !t.isMissing && !t.isRecording && t.source !== 'recorded' && !String(t.id || '').startsWith('disk_rec_'));
+        if (playable.length > 0) {
+          this.setQueue(playable, playable.length - 1, true);
+          return;
+        }
+      }
+      return;
+    }
+
+    const now = Date.now();
+    const isDoubleTap = this._lastPrevClickTime && (now - this._lastPrevClickTime < 1500);
+    this._lastPrevClickTime = now;
+
+    if (this.audio && this.audio.currentTime > 3 && !isDoubleTap) {
       this.audio.currentTime = 0;
       this.updateProgressUI();
       return;
     }
+
+    if (this.queue.length === 1 && Array.isArray(window.allTracks) && window.allTracks.length > 1) {
+      const isRec = this.currentTrack && (this.currentTrack.isRecording || this.currentTrack.source === 'recorded' || String(this.currentTrack.id || '').startsWith('disk_rec_'));
+      let candidatePool = [];
+      if (isRec && typeof window.getAppRecordings === 'function') {
+        candidatePool = window.getAppRecordings();
+      } else {
+        candidatePool = window.allTracks.filter(t => !t.isMissing && !t.isRecording && t.source !== 'recorded' && !String(t.id || '').startsWith('disk_rec_'));
+      }
+      if (candidatePool.length > 1) {
+        const curIdx = candidatePool.findIndex(t => t.id === this.currentTrack.id);
+        const prevIdx = (curIdx - 1 + candidatePool.length) % candidatePool.length;
+        this.setQueue(candidatePool, prevIdx, true);
+        return;
+      }
+    }
+
     let prevIndex = this.currentIndex - 1;
     if (prevIndex < 0) {
       prevIndex = this.queue.length - 1;
@@ -567,6 +645,11 @@ class MusicPlayer {
     this.playbackMode = mode;
     localStorage.setItem('musico-playback-mode', mode);
 
+    const basePool = (this.originalQueue && this.originalQueue.length > 0)
+      ? this.originalQueue
+      : ((this.queue && this.queue.length > 0) ? this.queue : (window.allTracks || []));
+    this.originalQueue = [...basePool];
+
     if (mode === 'normal') {
       this.isShuffle = false;
       this.repeatMode = 'all';
@@ -580,10 +663,13 @@ class MusicPlayer {
       this.isShuffle = true;
       this.repeatMode = 'all';
       const currentTrackId = this.currentTrack ? this.currentTrack.id : null;
-      this.queue = this.shuffleArray([...this.originalQueue]);
       if (currentTrackId) {
-        const found = this.queue.findIndex(t => t.id === currentTrackId);
-        this.currentIndex = found !== -1 ? found : 0;
+        const otherTracks = this.originalQueue.filter(t => t.id !== currentTrackId);
+        this.queue = [this.currentTrack, ...this.shuffleArray([...otherTracks])];
+        this.currentIndex = 0;
+      } else {
+        this.queue = this.shuffleArray([...this.originalQueue]);
+        this.currentIndex = 0;
       }
     } else if (mode === 'repeat_one') {
       this.isShuffle = false;

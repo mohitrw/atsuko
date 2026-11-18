@@ -1,9 +1,9 @@
 /**
- * Atsuko - PWA Offline Service Worker (v143)
+ * Atsuko - PWA Offline Service Worker (v159)
  * Pure offline app shell caching. Never caches user data.
  */
 
-const CACHE_NAME = 'atsuko-cache-v143';
+const CACHE_NAME = 'atsuko-cache-v159';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -14,8 +14,12 @@ const STATIC_ASSETS = [
   './robots.txt',
   './sitemap.xml',
   './css/style.css',
+  './css/rainyLyrics.css',
+  './fonts/impact.ttf',
+  './fonts/ariblk.ttf',
   './js/app.js',
   './js/player.js',
+  './js/rainyLyrics.js',
   './js/fileManager.js',
   './js/id3Parser.js',
   './js/kwsEngine.js',

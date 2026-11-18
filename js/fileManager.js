@@ -936,6 +936,11 @@ class FileManager {
         languagePlayCounts: rawStats.languagePlayCounts || {},
         firstLaunchDate: rawStats.firstLaunchDate || firstLaunch
       };
+
+      if (this._cachedStats.totalListeningSeconds > 60 && this._cachedStats.totalSongsPlayed > Math.floor(this._cachedStats.totalListeningSeconds / 45)) {
+        this._cachedStats.totalSongsPlayed = Math.max(1, Math.round(this._cachedStats.totalListeningSeconds / 195));
+        this.savePlaybackStats(this._cachedStats);
+      }
     }
 
     return this._cachedStats;

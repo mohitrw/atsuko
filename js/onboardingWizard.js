@@ -419,7 +419,94 @@
 
         // Empty or recordings_only or confirmed not_empty: create fresh .atu
         await window.dataFolderService.connectDirectory(handle);
-        const defaultData = window.AtuSchema.createDefaultData();
+
+        const currentUsername = (typeof localStorage !== 'undefined' && (localStorage.getItem('musico_profile_username') || localStorage.getItem('musico_profile_name'))) || 'USER';
+        const currentAvatar = (typeof localStorage !== 'undefined' && (localStorage.getItem('musico_profile_image') || localStorage.getItem('musico_profile_avatar'))) || 'assets/default-avatar.svg';
+
+        const defaultData = window.AtuSchema.createDefaultData({
+          username: currentUsername,
+          avatar: currentAvatar
+        });
+
+        // 1. Preserve current playback stats
+        if (window.fileManager && window.fileManager._cachedStats) {
+          defaultData.stats = {
+            totalListeningSec: Math.round(window.fileManager._cachedStats.totalListeningSeconds || 0),
+            songsPlayed: window.fileManager._cachedStats.totalSongsPlayed || 0
+          };
+        } else if (window.fileManager) {
+          try {
+            const st = await window.fileManager.getPlaybackStats();
+            defaultData.stats = {
+              totalListeningSec: Math.round(st.totalListeningSeconds || 0),
+              songsPlayed: st.totalSongsPlayed || 0
+            };
+          } catch (e) {}
+        }
+
+        // 2. Preserve in-app playlists
+        let prePlaylists = [];
+        if (window.fileManager) {
+          try {
+            prePlaylists = (await window.fileManager.getPlaylists()) || [];
+          } catch (e) {}
+        }
+        if ((!prePlaylists || prePlaylists.length === 0) && Array.isArray(window.playlists)) {
+          prePlaylists = window.playlists;
+        }
+        if (Array.isArray(prePlaylists) && prePlaylists.length > 0) {
+          defaultData.playlists = prePlaylists;
+          if (window.dataFolderService) {
+            window.dataFolderService.originalAtuPlaylists = JSON.parse(JSON.stringify(prePlaylists));
+          }
+        }
+
+        // 3. Preserve in-app folders
+        if (window.folderService) {
+          defaultData.folders = window.folderService.getAllFolders();
+        }
+
+        // 4. Preserve favourites
+        if (typeof window.getFavouriteTrackIds === 'function') {
+          defaultData.favourites = window.getFavouriteTrackIds();
+        }
+
+        // 5. Preserve songs from window.allTracks (excluding recordings)
+        if (Array.isArray(window.allTracks) && window.allTracks.length > 0) {
+          const songsList = [];
+          window.allTracks.forEach(t => {
+            if (t.isRecording || t.source === 'recorded' || (t.id && String(t.id).startsWith('disk_rec_'))) return;
+            const fp = t.fingerprint || {
+              name: t.title || t.name || '',
+              size: t.fileBlob?.size || 0,
+              durationSec: Math.round(t.duration || 0),
+              lastModified: t.fileBlob?.lastModified || Date.now(),
+              hash: `size_${t.fileBlob?.size || 0}_${t.title || ''}`
+            };
+            songsList.push({
+              id: t.id,
+              fingerprint: fp,
+              relativePath: t.relativePath || t.fileBlob?.name || t.title,
+              title: t.title,
+              artist: t.artist,
+              album: t.album,
+              genre: t.genre || 'Unknown',
+              lyrics: t.lyrics || '',
+              addedAt: t.addedAt ? (typeof t.addedAt === 'number' ? new Date(t.addedAt).toISOString() : t.addedAt) : new Date().toISOString(),
+              folderId: t.folderId || null,
+              favourite: typeof window.isFavourite === 'function' ? window.isFavourite(t.id) : false,
+              playCount: t.playCount || 0,
+              lastPlayedAt: t.lastPlayedAt || null,
+              source: t.source || 'imported',
+              isMissing: Boolean(t.isMissing)
+            });
+          });
+          defaultData.songs = songsList;
+          if (window.dataFolderService) {
+            window.dataFolderService.originalAtuSongs = JSON.parse(JSON.stringify(songsList));
+          }
+        }
+
         await window.dataFolderService.save(defaultData, true);
 
         return { type: 'new', data: defaultData, handle };

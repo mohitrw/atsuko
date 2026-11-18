@@ -214,10 +214,17 @@
     }
 
     /**
-     * Get unsorted songs (songs without a folder)
+     * Get unsorted songs (songs without a folder, excluding recordings)
      */
     getUnsortedSongs(allSongs = []) {
-      return allSongs.filter(s => !s.folderId);
+      return allSongs.filter(s => {
+        if (!s) return false;
+        if (s.folderId) return false;
+        if (s.isRecording) return false;
+        if (s.source === 'recorded') return false;
+        if (typeof s.id === 'string' && s.id.startsWith('disk_rec_')) return false;
+        return true;
+      });
     }
 
     onChange(callback) {

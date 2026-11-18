@@ -7,7 +7,8 @@ $files = @(
   'js/recorderService.js',
   'js/onboardingWizard.js',
   'js/player.js',
-  'js/fileManager.js'
+  'js/fileManager.js',
+  'js/rainyLyrics.js'
 )
 
 foreach ($f in $files) {

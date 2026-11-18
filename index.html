@@ -57,7 +57,8 @@
     rel="stylesheet" />
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="css/style.css?v=142" />
+  <link rel="stylesheet" href="css/style.css?v=159" />
+  <link rel="stylesheet" href="css/rainyLyrics.css?v=159" />
 
   <!-- PWA Web App Manifest & Meta -->
   <link rel="manifest" href="manifest.json" />
@@ -832,12 +833,6 @@
           </button>
         </div>
 
-        <!-- Single Vertical Control Bar (| |) -->
-        <div class="expanded-single-bar-control" id="expandedSingleBarControl" aria-hidden="true">
-          <span></span>
-          <span></span>
-        </div>
-
         <!-- Artist Details Section -->
         <div class="expanded-artist-details-block" id="expandedArtistDetailsBlock">
           <p class="expanded-artist-bio" id="expandedArtistBio">
@@ -861,7 +856,7 @@
           </div>
           <div class="expanded-genres-scroll-container" id="expandedGenresScrollContainer">
             <div class="expanded-genres-chips-row" id="expandedGenresChipsRow">
-              <button class="expanded-genre-chip active" data-genre="Melancholic">Melancholic</button>
+              <button class="expanded-genre-chip" data-genre="Melancholic">Melancholic</button>
               <button class="expanded-genre-chip" data-genre="Sad">Sad</button>
               <button class="expanded-genre-chip" data-genre="Chill">Chill</button>
               <button class="expanded-genre-chip" data-genre="Heartbreak">Heartbreak</button>
@@ -881,12 +876,12 @@
               id="expandedMainCoverImg" />
             <div class="expanded-lyrics-visual-overlay" id="expandedLyricsVisualOverlay" style="display: none;">
               <div class="expanded-lyrics-text-lines" id="expandedLyricsTextLines"></div>
-              <div class="expanded-lyrics-dots" id="expandedLyricsDots" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span class="active"></span>
-              </div>
             </div>
+            <!-- Current Song 3-Dots Options Menu Button -->
+            <button class="expanded-cover-options-btn" id="expandedCoverOptionsBtn" title="Song Options"
+              aria-label="Song Options">
+              <img src="assets/Dark Mode/DarkModeOptionsbtn.svg" alt="Options" />
+            </button>
           </div>
 
           <!-- Up Next Section -->
@@ -1434,7 +1429,7 @@
       <div class="search-input-wrapper">
         <img src="assets/Search.png" alt="Search" width="18" height="18" />
         <input type="text" id="searchInput" class="search-input" placeholder="Search by title, artist, album..." />
-        <button class="search-close-btn" id="closeSearchBtn" aria-label="Close search">✕</button>
+        <button class="search-close-btn" id="closeSearchBtn" aria-label="Clear search text" title="Clear text">✕</button>
       </div>
     </div>
   </div>
@@ -2050,15 +2045,18 @@
         <div class="manual-section">
           <h4>⌨️ Keyboard Navigation</h4>
           <p class="manual-shortcuts-text">
-            • <strong>A / D</strong> — Switch view modes in PC view (Songs List, Lyrics, 3-Column Grid, and Up
-            Next).<br>
+            • <strong>A / D</strong> — Switch view modes in PC view (Songs List, Lyrics, 3-Column Grid, and Up Next).<br>
             • <strong>S</strong> — Toggle playback mode between Shuffle, Repeat On, and Repeat Off.<br>
             • <strong>Space</strong> — Play or Pause playback.<br>
             • <strong>N</strong> — Skip to the Next song.<br>
             • <strong>P</strong> — Play the Previous song.<br>
-            • <strong>L</strong> — Enter Full View mode (covers the full screen displaying only the current playing song
-            with large artwork and interactive lyrics).<br>
-            • <strong>← / →</strong> — Seek 5 seconds backward or forward.
+            • <strong>L</strong> — Enter Full View mode (covers the full screen displaying only current playing song with large artwork and interactive lyrics).<br>
+            • <strong>B</strong> — Enter Rainy Window Lyrics Mode (immersive fogged glass with living mist, water droplets, and luminous lyrics). Press again to exit.<br>
+            • <strong>Shift + B</strong> — Toggle Heavy Rain storm mode inside Rainy Window (intense rain pelting & cascading streams). Press again to calm down.<br>
+            • <strong>D</strong> — Toggle real-time hydrodynamics & mist Tuner panel (inside Rainy Window).<br>
+            • <strong>Esc</strong> — Exit Rainy Window, Full View mode, or active search/modals.<br>
+            • <strong>← / →</strong> — Seek 5 seconds backward or forward.<br>
+            • <strong>R</strong> — Start or stop recording (in Voice Recorder view).
           </p>
         </div>
         <div class="manual-section">
@@ -2086,6 +2084,7 @@
   <!-- Three-Dot Song Context Menu -->
   <div class="context-menu" id="songContextMenu" role="menu">
     <button class="context-item" data-action="select" role="menuitem">Select</button>
+    <button class="context-item" data-action="add-to-fav" id="contextAddToFavBtn" role="menuitem">Add to Fav.</button>
     <button class="context-item" data-action="add-to-playlist" role="menuitem">Add to Playlist</button>
     <button class="context-item" data-action="move-to-folder" role="menuitem">Move to Folder</button>
     <button class="context-item" data-action="remove-from-folder" id="contextRemoveFromFolderBtn" role="menuitem"
@@ -2597,7 +2596,8 @@
             <span style="font-size: 24px;">📁</span>
             <div>
               <strong style="display: block; font-size: 14px; color: #FFFFFF;">Select Music Folder</strong>
-              <span style="font-size: 12px; color: #8E8E93;">Scan an entire folder on your device for all audio tracks</span>
+              <span style="font-size: 12px; color: #8E8E93;">Scan an entire folder on your device for all audio
+                tracks</span>
             </div>
           </button>
         </div>
@@ -2658,8 +2658,10 @@
 
   <!-- Atsuko Data File Viewer Modal (v138) -->
   <div class="modal-overlay" id="atuDataViewerModal" role="dialog" aria-modal="true" style="display: none;">
-    <div class="settings-card atu-viewer-card" style="max-width: 640px; width: 92%; max-height: 85vh; display: flex; flex-direction: column;">
-      <div class="settings-header" style="flex-shrink: 0; padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+    <div class="settings-card atu-viewer-card"
+      style="max-width: 640px; width: 92%; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="settings-header"
+        style="flex-shrink: 0; padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <h2 class="settings-title" style="font-size: 18px; margin: 0;">Atsuko File Data</h2>
           <span class="atu-viewer-filename-badge" id="atuViewerFileName">main.atu</span>
@@ -2668,13 +2670,16 @@
       </div>
 
       <!-- Multi-file source picker if multiple .atu files were merged -->
-      <div id="atuViewerSourceSelectorRow" style="display: none; margin: 12px 0 6px 0; padding: 10px 14px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; font-size: 13px; align-items: center; justify-content: space-between; flex-shrink: 0;">
+      <div id="atuViewerSourceSelectorRow"
+        style="display: none; margin: 12px 0 6px 0; padding: 10px 14px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; font-size: 13px; align-items: center; justify-content: space-between; flex-shrink: 0;">
         <span style="color: #8E8E93;">View Source File:</span>
-        <select id="atuViewerSourceSelect" class="atsuko-select" style="font-size: 12px; padding: 4px 10px; border-radius: 8px;"></select>
+        <select id="atuViewerSourceSelect" class="atsuko-select"
+          style="font-size: 12px; padding: 4px 10px; border-radius: 8px;"></select>
       </div>
 
       <!-- Scrollable content area -->
-      <div class="atu-viewer-content" id="atuViewerContent" style="overflow-y: auto; flex: 1; padding: 14px 4px 14px 0;">
+      <div class="atu-viewer-content" id="atuViewerContent"
+        style="overflow-y: auto; flex: 1; padding: 14px 4px 14px 0;">
         <!-- Injected via openAtuDataViewerModal() in app.js -->
       </div>
     </div>
@@ -2699,21 +2704,22 @@
   </noscript>
 
   <!-- Core Services & Dependencies -->
-  <script src="js/lame.min.js?v=143"></script>
-  <script src="js/atuSchema.js?v=143"></script>
-  <script src="js/songFingerprint.js?v=143"></script>
-  <script src="js/dataFolderService.js?v=143"></script>
-  <script src="js/folderService.js?v=143"></script>
-  <script src="js/recorderService.js?v=143"></script>
-  <script src="js/onboardingWizard.js?v=143"></script>
+  <script src="js/lame.min.js?v=155"></script>
+  <script src="js/atuSchema.js?v=155"></script>
+  <script src="js/songFingerprint.js?v=155"></script>
+  <script src="js/dataFolderService.js?v=155"></script>
+  <script src="js/folderService.js?v=155"></script>
+  <script src="js/recorderService.js?v=155"></script>
+  <script src="js/onboardingWizard.js?v=155"></script>
 
   <!-- Existing Audio & Player Engine -->
-  <script src="js/id3Parser.js?v=143"></script>
-  <script src="js/fileManager.js?v=143"></script>
-  <script src="js/player.js?v=143"></script>
-  <script src="js/app.js?v=143"></script>
-  <script src="js/kwsEngine.js?v=143"></script>
-  <script src="js/voiceAssistant.js?v=143"></script>
+  <script src="js/id3Parser.js?v=159"></script>
+  <script src="js/fileManager.js?v=159"></script>
+  <script src="js/player.js?v=159"></script>
+  <script src="js/rainyLyrics.js?v=159"></script>
+  <script src="js/app.js?v=159"></script>
+  <script src="js/kwsEngine.js?v=159"></script>
+  <script src="js/voiceAssistant.js?v=159"></script>
 </body>
 
 </html>

@@ -860,7 +860,9 @@
                     fileBlob: file, // Live File object!
                     fileHandle: entry,
                     isLocal: true,
+                    isRecording: true,
                     source: 'recorded',
+                    folderId: 'recordings',
                     date: dateStr,
                     timestamp: lastModified,
                     addedAt: new Date(lastModified).toISOString(),
